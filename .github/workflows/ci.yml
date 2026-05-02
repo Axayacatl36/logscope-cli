@@ -44,7 +44,7 @@ jobs:
         run: |
           poetry config virtualenvs.in-project true
           poetry env use python${{ matrix.python-version }}
-          poetry install --no-interaction --with dev --no-root
+          poetry install --no-interaction --with dev
 
       - name: Lint (ruff)
         run: poetry run ruff check .
