@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Python ${{ matrix.python-version }}
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -35,15 +36,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock', 'pyproject.toml') }}
           restore-keys: |
-            venv-${{ runner.os }}-${{ matrix.python-version }}-
+            venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-
 
       - name: Install dependencies
         run: |
           poetry config virtualenvs.in-project true
-          poetry install --no-interaction --with dev --no-root
           poetry env use python${{ matrix.python-version }}
+          poetry install --no-interaction --with dev --no-root
 
       - name: Lint (ruff)
         run: poetry run ruff check .
