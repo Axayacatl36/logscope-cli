@@ -23,6 +23,10 @@ This page documents the public Python-facing surfaces currently used by LogScope
 - `logscope.parser.parse_line(line: str) -> LogEntry`
   - Parses bracket-style logs and JSON logs.
   - Normalizes severities (`WARNING` -> `WARN`, `ERR` -> `ERROR`, `EMERGENCY` -> `FATAL`).
+  - Recognizes common JSON severity/message keys including `level`, `severity`, `log.level`,
+    `severity_text`, `severityText`, `message`, `msg`, `text`, `body`, and Docker's `log`.
+  - Extracts observability metadata from top-level fields and OpenTelemetry
+    `resource.attributes.service.name`.
 
 ## Viewer API
 

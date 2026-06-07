@@ -21,7 +21,7 @@
 
 *   **Fast & Lightweight**: Tail files natively or stream huge data directly via pipes (`cat server.log | logscope`).
 *   **Colored & Structured Logs**: Automatically identifies `INFO`, `WARNING`, `ERROR`, `CRITICAL`, and `DEBUG`, applying beautiful typography.
-*   **Universal Parser**: Reads typical bracket logs (`[INFO]`) **and** parses modern NDJSON / JSON logs out of the box (e.g., Kubernetes, Docker).
+*   **Universal Parser**: Reads typical bracket logs (`[INFO]`) **and** parses modern NDJSON / JSON logs out of the box (e.g., Kubernetes, Docker, OpenTelemetry).
 *   **Auto-Highlighting**: Magically highlights `IPs`, `URLs`, `Dates/Timestamps`, `UUIDs`, and `E-Mails` with dynamic colors.
 *   **Custom Keyword Highlighting**: Highlight specific keywords in log messages with `--highlight` and customize colors with `--highlight-color`.
 *   **Live Dashboard**: Watch logs stream in real-time alongside a live statistics panel keeping track of Error vs Info counts (`--dashboard`).
@@ -97,6 +97,10 @@ logscope app.log --no-color
 # Compressed log file
 logscope archive/app.log.gz
 ```
+
+JSON logs can use common fields such as `level`, `severity`, `severity_text`, `message`, `msg`,
+`body`, or Docker's `log`. LogScope also extracts observability context from fields such as
+`service.name`, `resource.attributes.service.name`, `trace_id`, and `span_id`.
 
 ### Piping from other commands (Stdin support)
 LogScope acts as a brilliant text reformatter for other tools!

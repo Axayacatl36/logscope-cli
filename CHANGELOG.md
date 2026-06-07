@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add grep-style search context in stream mode with `--context`, `--before-context`, and `--after-context`.
 - Add CLI coverage for context output and validation when context is used without `--search`.
 
+## [0.4.7](https://github.com/vinnytherobot/logscope-cli/compare/v0.4.6...v0.4.7) (2026-05-02)
+
+
+### Bug Fixes
+
+* **ci:** remove --no-root to fix pytest module not found ([2f5f053](https://github.com/vinnytherobot/logscope-cli/commit/2f5f05362ac23b8817e31498ecac444abbf3cea7))
+
 ## [0.4.2] - 2026-04-05
 
 ### Added
