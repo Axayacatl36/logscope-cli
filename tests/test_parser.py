@@ -48,3 +48,26 @@ def test_parse_json_observability_fields():
     assert entry.service == "checkout-api"
     assert entry.trace_id == "abcd1234efgh5678ijklmnop"
     assert entry.span_id == "span99"
+
+
+def test_parse_docker_json_log_message_and_inner_level():
+    log_line = '{"log":"[ERROR] payment failed\\n","stream":"stderr","time":"2026-03-14T15:30:00Z"}'
+    entry = parse_line(log_line)
+    assert entry.level == "ERROR"
+    assert entry.message == "payment failed"
+    assert entry.timestamp is not None
+
+
+def test_parse_opentelemetry_json_fields():
+    log_line = (
+        '{"severity_text":"warn","body":"checkout latency high",'
+        '"resource":{"attributes":{"service.name":"checkout-api"}},'
+        '"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736",'
+        '"span_id":"00f067aa0ba902b7"}'
+    )
+    entry = parse_line(log_line)
+    assert entry.level == "WARN"
+    assert entry.message == "checkout latency high"
+    assert entry.service == "checkout-api"
+    assert entry.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
+    assert entry.span_id == "00f067aa0ba902b7"
