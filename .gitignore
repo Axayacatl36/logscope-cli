@@ -79,7 +79,7 @@ poetry.lock
 .claude
 .claude/
 .gemini/
-AGENT.md
+AGENTS.md
 CLAUDE.md
 RELEASE_NOTES_v*.md
 TASKS.md

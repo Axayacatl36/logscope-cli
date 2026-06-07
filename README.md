@@ -26,7 +26,7 @@
 *   **Custom Keyword Highlighting**: Highlight specific keywords in log messages with `--highlight` and customize colors with `--highlight-color`.
 *   **Live Dashboard**: Watch logs stream in real-time alongside a live statistics panel keeping track of Error vs Info counts (`--dashboard`).
 *   **HTML Export**: Loved your console output so much you want to share it? Export the beautiful log structure directly to an HTML file to share with your team! (`--export-html results.html`)
-*   **Filtering**: Filter by one or more levels (`--level ERROR` or `--level ERROR,WARN,INFO`). Search by substring (`--search`) or regular expression (`--regex` / `-e`), with optional **case-sensitive** matching and **invert match** (`--invert-match` / `-v`, grep-style) to hide matching lines.
+*   **Filtering**: Filter by one or more levels (`--level ERROR` or `--level ERROR,WARN,INFO`). Search by substring (`--search`) or regular expression (`--regex` / `-e`), with optional **case-sensitive** matching, **invert match** (`--invert-match` / `-v`), and grep-style context lines (`--context`, `--before-context`, `--after-context`).
 *   **Themes**: Choose from 6 beautiful themes (`default`, `neon`, `ocean`, `forest`, `minimal`, `spectra`) or create custom themes via config file.
 *   **Plain output**: Use `--no-color` when you need unstyled text (e.g. piping to other tools or logs without ANSI codes).
 *   **Gzip logs**: Read `.gz` files directly—LogScope opens them as text without a manual `zcat` pipe.
@@ -70,6 +70,14 @@ logscope production.log --level ERROR,WARN,INFO
 
 # Search text dynamically
 logscope server.log --search "Connection Timeout"
+
+# Show surrounding lines for each search hit
+logscope server.log --search "payment failed" --context 2
+
+# Show asymmetric context around each search hit
+logscope server.log --search "timeout" --before-context 3 --after-context 1
+
+# Context options require --search and apply to standard stream output
 
 # Regex search (requires --search)
 logscope server.log --search "timeout|refused|ECONNRESET" --regex

@@ -6,7 +6,7 @@ This page documents the public Python-facing surfaces currently used by LogScope
 
 - `logscope.cli:app`
   - Typer app exported as the `logscope` command by Poetry scripts.
-  - Command options include filtering (`--level`), search (`--search`, `--regex`), display (`--dashboard`), and export (`--export-html`).
+  - Command options include filtering (`--level`), search (`--search`, `--regex`), stream-mode search context (`--context`, `--before-context`, `--after-context`), display (`--dashboard`), and export (`--export-html`).
 
 ## Parser API
 

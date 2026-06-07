@@ -1,8 +1,9 @@
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, TextIO, Set, Pattern
+from typing import Deque, Iterable, Iterator, List, Optional, Pattern, Set, TextIO, Tuple
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -197,6 +198,65 @@ def line_passes_filters(
     return True
 
 
+def iter_search_context(
+    entries: Iterable[Tuple[int, LogEntry]],
+    search: Optional[str],
+    *,
+    pattern: Optional[Pattern[str]],
+    use_regex: bool,
+    case_sensitive: bool,
+    invert_match: bool,
+    before_context: int = 0,
+    after_context: int = 0,
+) -> Iterator[Tuple[int, LogEntry]]:
+    """Yield matching entries plus grep-style before/after context lines."""
+    if not search or (before_context <= 0 and after_context <= 0):
+        for line_number, entry in entries:
+            if line_passes_search(
+                entry.raw,
+                search,
+                pattern=pattern,
+                use_regex=use_regex,
+                case_sensitive=case_sensitive,
+                invert_match=invert_match,
+            ):
+                yield line_number, entry
+        return
+
+    before: Deque[Tuple[int, LogEntry]] = deque(maxlen=before_context)
+    after_remaining = 0
+    emitted: Set[int] = set()
+
+    for line_number, entry in entries:
+        matched = line_passes_search(
+            entry.raw,
+            search,
+            pattern=pattern,
+            use_regex=use_regex,
+            case_sensitive=case_sensitive,
+            invert_match=invert_match,
+        )
+
+        if matched:
+            for buffered_line_number, buffered_entry in before:
+                if buffered_line_number not in emitted:
+                    emitted.add(buffered_line_number)
+                    yield buffered_line_number, buffered_entry
+
+            if line_number not in emitted:
+                emitted.add(line_number)
+                yield line_number, entry
+
+            after_remaining = max(after_remaining, after_context)
+        elif after_remaining > 0:
+            if line_number not in emitted:
+                emitted.add(line_number)
+                yield line_number, entry
+            after_remaining -= 1
+
+        before.append((line_number, entry))
+
+
 def get_lines(file: TextIO, follow: bool):
     """Generator that yields (line_number, line) tuples from a file, optionally tailing it."""
     line_number = 0
@@ -241,6 +301,8 @@ def stream_logs(
     highlight: Optional[str] = None,
     highlight_color: str = "bold magenta",
     min_level: Optional[str] = None,
+    before_context: int = 0,
+    after_context: int = 0,
 ):
     """Basic console mode: prints directly to stdout, supporting tails."""
     if export_html:
@@ -248,29 +310,37 @@ def stream_logs(
 
     level_set = parse_level_filter(level)
 
-    line_count = 0
-    try:
+    def filtered_entries() -> Iterator[Tuple[int, LogEntry]]:
         for line_number, line in get_lines(file, follow):
-            line_count = line_number
             entry = parse_line(line)
-
-            if not line_passes_filters(
+            if line_passes_filters(
                 entry,
                 level_set,
-                search,
+                None,
                 since,
                 until,
-                pattern=search_pattern,
-                use_regex=use_regex,
-                case_sensitive=case_sensitive,
-                invert_match=invert_match,
+                pattern=None,
+                use_regex=False,
+                case_sensitive=False,
+                invert_match=False,
                 min_level=min_level,
             ):
-                continue
-                
+                yield line_number, entry
+
+    try:
+        for line_number, entry in iter_search_context(
+            filtered_entries(),
+            search,
+            pattern=search_pattern,
+            use_regex=use_regex,
+            case_sensitive=case_sensitive,
+            invert_match=invert_match,
+            before_context=before_context,
+            after_context=after_context,
+        ):
             formatted = manager.format_log(
                 entry,
-                line_number=line_count if show_line_numbers else None,
+                line_number=line_number if show_line_numbers else None,
                 highlight=highlight,
                 highlight_color=highlight_color,
                 case_sensitive=case_sensitive,
