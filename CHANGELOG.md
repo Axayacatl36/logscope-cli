@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/vinnytherobot/logscope-cli/compare/v0.4.7...v0.5.0) (2026-06-07)
+
+
+### Features
+
+* **cli:** add search context lines ([aa7381d](https://github.com/vinnytherobot/logscope-cli/commit/aa7381d2328f1cfb41c0e5503b1c3ecab2121f11))
+* **parser:** support Docker and OpenTelemetry JSON fields ([7441c51](https://github.com/vinnytherobot/logscope-cli/commit/7441c5178db7e6109846395ae1c028d1b4e1fcea))
+
 ## [0.5.0] - 2026-06-07
 
 ### Added
