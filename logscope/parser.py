@@ -51,11 +51,32 @@ _NORMALIZE_LEVEL_MAP = {
     "EMERGENCY": "FATAL",
     "ERR": "ERROR",
 }
+_JSON_LEVEL_KEYS = ("level", "severity", "log.level", "severity_text", "severityText")
+_JSON_MESSAGE_KEYS = ("message", "msg", "text", "body", "log")
+_JSON_TIMESTAMP_KEYS = ("timestamp", "time", "@timestamp")
+_MISSING = object()
 
 
 def _normalize_level(level: str) -> str:
     """Normalize log level aliases to canonical forms."""
     return _NORMALIZE_LEVEL_MAP.get(level.upper(), level.upper())
+
+
+def _first_json_value(data: dict, keys: Tuple[str, ...]):
+    """Return the first present JSON value from a list of common log field names."""
+    for key in keys:
+        if key in data:
+            return data[key]
+    return _MISSING
+
+
+def _stringify_json_message(value, raw_line: str) -> str:
+    """Convert JSON message-like values to stable display text."""
+    if value is _MISSING:
+        return raw_line
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value).rstrip("\r\n")
 
 
 def _extract_json_observability(data: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -66,10 +87,18 @@ def _extract_json_observability(data: dict) -> Tuple[Optional[str], Optional[str
     if not pod_name and isinstance(k8s_d.get("pod"), dict):
         pod_name = k8s_d["pod"].get("name")
 
+    resource = data.get("resource")
+    resource_d: dict = resource if isinstance(resource, dict) else {}
+    resource_attrs = resource_d.get("attributes")
+    resource_attrs_d: dict = resource_attrs if isinstance(resource_attrs, dict) else {}
+
     service = (
         data.get("service")
         or data.get("service.name")
         or data.get("service_name")
+        or data.get("resource.attributes.service.name")
+        or resource_attrs_d.get("service.name")
+        or resource_attrs_d.get("service_name")
         or pod_name
         or k8s_d.get("container_name")
         or data.get("container")
@@ -102,15 +131,20 @@ def parse_line(line: str) -> LogEntry:
     if line.startswith('{') and line.endswith('}'):
         try:
             data = json.loads(line)
-            # Find level key
-            level = _normalize_level(data.get('level', data.get('severity', data.get('log.level', 'UNKNOWN'))))
-            # Find message key
-            message = str(data.get('message', data.get('msg', data.get('text', line))))
+            level_value = _first_json_value(data, _JSON_LEVEL_KEYS)
+            message = _stringify_json_message(_first_json_value(data, _JSON_MESSAGE_KEYS), line)
+            if level_value is _MISSING:
+                inner_entry = parse_line(message) if message != line else None
+                level = inner_entry.level if inner_entry and inner_entry.level != "UNKNOWN" else "UNKNOWN"
+                if inner_entry and inner_entry.level != "UNKNOWN":
+                    message = inner_entry.message
+            else:
+                level = _normalize_level(str(level_value))
             
             # Find timestamp
-            timestamp_str = data.get('timestamp', data.get('time', data.get('@timestamp')))
+            timestamp_str = _first_json_value(data, _JSON_TIMESTAMP_KEYS)
             timestamp = None
-            if timestamp_str:
+            if timestamp_str is not _MISSING and timestamp_str:
                 try:
                     # Basic ISO parsing
                     timestamp = datetime.fromisoformat(str(timestamp_str).replace('Z', '+00:00'))
