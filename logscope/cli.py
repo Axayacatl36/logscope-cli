@@ -99,6 +99,9 @@ def main(
     use_regex: Annotated[bool, typer.Option("--regex", "-e", help="Treat --search as a regular expression")] = False,
     case_sensitive: Annotated[bool, typer.Option("--case-sensitive", help="Case-sensitive substring or regex search")] = False,
     invert_match: Annotated[bool, typer.Option("--invert-match", "-v", help="Hide lines that match --search (grep -v)")] = False,
+    before_context: Annotated[int, typer.Option("--before-context", "-B", min=0, help="Show N lines before each --search match")] = 0,
+    after_context: Annotated[int, typer.Option("--after-context", "-A", min=0, help="Show N lines after each --search match")] = 0,
+    context: Annotated[int, typer.Option("--context", "-C", min=0, help="Show N lines before and after each --search match")] = 0,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colors and terminal highlighting")] = False,
     highlight: Annotated[Optional[str], typer.Option("--highlight", "-H", help="Highlight specific keyword in log messages (can be used multiple times)")] = None,
     highlight_color: Annotated[str, typer.Option("--highlight-color", help="Rich style for highlighted keywords (default: bold magenta)")] = "bold magenta",
@@ -111,6 +114,15 @@ def main(
         raise typer.Exit(1)
     if invert_match and not search:
         typer.echo("❌ Error: --invert-match requires --search.", err=True)
+        raise typer.Exit(1)
+
+    effective_before_context = before_context if before_context else context
+    effective_after_context = after_context if after_context else context
+    if (effective_before_context or effective_after_context) and not search:
+        typer.echo("❌ Error: --context requires --search.", err=True)
+        raise typer.Exit(1)
+    if dashboard and (effective_before_context or effective_after_context):
+        typer.echo("❌ Error: --context is only supported in stream mode.", err=True)
         raise typer.Exit(1)
 
     search_pattern = None
@@ -178,6 +190,8 @@ def main(
                 highlight=highlight,
                 highlight_color=highlight_color,
                 min_level=min_level,
+                before_context=effective_before_context,
+                after_context=effective_after_context,
             )
     finally:
         if log_file is not None:

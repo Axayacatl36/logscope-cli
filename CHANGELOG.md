@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-07
+
+### Added
+
+- Add grep-style search context in stream mode with `--context`, `--before-context`, and `--after-context`.
+- Add CLI coverage for context output and validation when context is used without `--search`.
+
 ## [0.4.7](https://github.com/vinnytherobot/logscope-cli/compare/v0.4.6...v0.4.7) (2026-05-02)
 
 
