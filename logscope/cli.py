@@ -11,7 +11,7 @@ from .viewer import stream_logs, run_dashboard, manager
 
 app = typer.Typer(
     help="LogScope — Beautiful log viewer for the terminal",
-    add_completion=False,
+    add_completion=True,
     rich_markup_mode="rich"
 )
 
@@ -95,7 +95,7 @@ def main(
     line_numbers: Annotated[bool, typer.Option("--line-numbers", "-n", help="Show line numbers for each log message")] = False,
     since: Annotated[Optional[str], typer.Option("--since", help="Show logs since a point in time (e.g. '1h', '30m', '2026-01-01T00:00:00')")] = None,
     until: Annotated[Optional[str], typer.Option("--until", help="Show logs until a point in time")] = None,
-    theme: Annotated[Optional[str], typer.Option("--theme", "-t", help="Choose a theme for colors and emojis (default, neon, ocean, forest, minimal, spectra, plain)")] = None,
+    theme: Annotated[Optional[str], typer.Option("--theme", "-t", help="Choose a theme for colors and emojis (default, neon, ocean, forest, minimal, spectra, simple)")] = None,
     use_regex: Annotated[bool, typer.Option("--regex", "-e", help="Treat --search as a regular expression")] = False,
     case_sensitive: Annotated[bool, typer.Option("--case-sensitive", help="Case-sensitive substring or regex search")] = False,
     invert_match: Annotated[bool, typer.Option("--invert-match", "-v", help="Hide lines that match --search (grep -v)")] = False,
@@ -155,7 +155,7 @@ def main(
     # Inform user about themes only if they are using default and haven't hidden the tip by having a config
     has_config = Path(".logscoperc").exists() or (Path.home() / ".logscoperc").exists()
     if not theme and not has_config:
-        manager.console.print("[dim]💡 Tip: Use '--theme' or create a '.logscoperc' file to change colors. Themes: neon, ocean, forest, minimal, spectra, plain[/dim]\n")
+        manager.console.print("[dim]💡 Tip: Use '--theme' or create a '.logscoperc' file to change colors. Themes: neon, ocean, forest, minimal, spectra, simple[/dim]\n")
 
     try:
         if dashboard:

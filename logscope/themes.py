@@ -169,7 +169,7 @@ DEFAULT_THEMES = {
             "logscope.number": "dim bright_cyan"
         }
     },
-    "plain": {
+    "simple": {
         "levels": {
             "TRACE": ("", "dim white"),
             "DEBUG": ("", "bold blue"),

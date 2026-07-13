@@ -29,7 +29,7 @@
 *   **Live Dashboard**: Watch logs stream in real-time alongside a live statistics panel keeping track of Error vs Info counts (`--dashboard`).
 *   **HTML Export**: Loved your console output so much you want to share it? Export the beautiful log structure directly to an HTML file to share with your team! (`--export-html results.html`)
 *   **Filtering**: Filter by one or more levels (`--level ERROR` or `--level ERROR,WARN,INFO`). Search by substring (`--search`) or regular expression (`--regex` / `-e`), with optional **case-sensitive** matching, **invert match** (`--invert-match` / `-v`), and grep-style context lines (`--context`, `--before-context`, `--after-context`).
-*   **Themes**: Choose from 7 beautiful themes (`default`, `neon`, `ocean`, `forest`, `minimal`, `spectra`, `plain`) or create custom themes via config file. `plain` skips emojis entirely and left-aligns log levels.
+*   **Themes**: Choose from 7 beautiful themes (`default`, `neon`, `ocean`, `forest`, `minimal`, `spectra`, `simple`) or create custom themes via config file. `simple` skips emojis entirely and left-aligns log levels.
 *   **Plain output**: Use `--no-color` when you need unstyled text (e.g. piping to other tools or logs without ANSI codes).
 *   **Gzip logs**: Read `.gz` files directly—LogScope opens them as text without a manual `zcat` pipe.
 

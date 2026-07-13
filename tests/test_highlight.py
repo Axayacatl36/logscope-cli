@@ -111,11 +111,11 @@ def test_format_log_left_aligns_when_theme_has_no_icons():
         manager.apply_theme("default")
 
 
-def test_plain_theme_has_no_icons_and_left_aligns():
-    """The built-in 'plain' theme ships with no emojis and should left-align levels."""
+def test_simple_theme_has_no_icons_and_left_aligns():
+    """The built-in 'simple' theme ships with no emojis and should left-align levels."""
     entry = LogEntry(level="ERROR", message="Database timeout", raw="[ERROR] Database timeout")
     try:
-        manager.apply_theme("plain")
+        manager.apply_theme("simple")
         assert not manager._has_icons
         text = manager.format_log(entry, line_number=None)
         assert text.plain == "ERROR   Database timeout"
