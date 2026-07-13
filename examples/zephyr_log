@@ -1,0 +1,14 @@
+00:00:06.900,482 INFO Less4_Exer2: Calculating the factorials of numbers 1 to 10: 
+[00:00:06.900,512] <inf> Less4_Exer2: The factorial of  1 = 1 
+something[00:00:06.900,512] <err> Less4_Exer2: The factorial of  2 = 2 
+00:00:06.900,512] <dbg> Less4_Exer2: The factorial of  3 = 6 
+[00:00:06.900,543] wrn> Less4_Exer2: The factorial of  4 = 24 
+[00:00:06.900,543] <inf> Less4_Exer2: The factorial of  5 = 120 
+[00:00:06.900,543] <inf> Less4_Exer2: The factorial of  6 = 720 
+[00:00:06.900,543] <inf> Less4_Exer2: The factorial of  7 = 5040 
+[00:00:06.900,543] <inf> Less4_Exer2: The factorial of  8 = 40320 
+[00:00:06.900,573] <inf> Less4_Exer2: The factorial of  9 = 362880 
+[00:00:06.900,573] <inf> Less4_Exer2: The factorial of 10 = 3628800
+[00:0006.900,573] <inf> Less4_Exer2: The factorial of 10 = 3628800
+[00:00:06.900,573 <inf Less4_Exer2: The factorial of 10 = 0x12f DATA[12 34 56 78 90 a1 b2 c3 d4 e5 f6 ff ff ff ee ab ab ab]
+[00:00:06.900,573] <inf> Less4_Exer2: The factorial of 10 = 3628800

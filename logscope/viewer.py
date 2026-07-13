@@ -1,4 +1,6 @@
+import re
 import sys
+import textwrap
 import time
 from collections import deque
 from pathlib import Path
@@ -52,11 +54,22 @@ class LogScopeHighlighter(RegexHighlighter):
     ]
 
 
+_NUMBER_PATTERN = re.compile(r'\b(0[xX])[0-9a-fA-F]+\b|-?\d+(?:\.\d+)?')
+_DATA_BYTES_PER_ROW = 16
+
+
 class LogScopeManager:
     """Manages the console state and current theme."""
     def __init__(self, theme_name: str = "default"):
         self._no_color = False
+        # Max total line width before the message/DATA dump wraps to an indented
+        # continuation line. None (the default) disables wrapping entirely.
+        self._wrap_width: Optional[int] = None
         self.apply_theme(theme_name)
+
+    def set_wrap_width(self, width: Optional[int]) -> None:
+        """Set the max line width for message/DATA wrapping; None disables it."""
+        self._wrap_width = width
 
     def apply_theme(self, theme_name_or_dict, no_color: bool = False, custom_themes: Optional[dict] = None):
         self._no_color = no_color
@@ -67,12 +80,97 @@ class LogScopeManager:
             theme_config = theme_name_or_dict
 
         self.level_mapping = theme_config["levels"]
+        # If no level in this theme carries an actual icon, drop the icon column
+        # entirely instead of padding for it, so level names stay left-aligned.
+        self._has_icons = any(icon.strip() for icon, _ in self.level_mapping.values())
+        # Widest timestamp/module text seen so far this session. A corrupted line
+        # (e.g. a dropped UART byte shrinking "[00:00:06.900,512]" by a char) still
+        # gets padded out to this width, so the message column doesn't jump left.
+        self._timestamp_width = 0
+        self._module_width = 0
         self.rich_theme = Theme(theme_config["highlights"])
         self.console = Console(
             theme=self.rich_theme,
             highlighter=LogScopeHighlighter(),
             no_color=no_color,
         )
+
+    def _append_message_part(self, text: Text, part: str, base_style: Optional[str]) -> None:
+        """Append a message fragment, additionally highlighting embedded numbers."""
+        if self._no_color:
+            text.append(part)
+            return
+        last_end = 0
+        for match in _NUMBER_PATTERN.finditer(part):
+            text.append(part[last_end:match.start()], style=base_style)
+            hex_prefix = match.group(1)
+            if hex_prefix:
+                text.append(hex_prefix, style=base_style)
+                text.append(match.group()[len(hex_prefix):], style="logscope.number")
+            else:
+                text.append(match.group(), style="logscope.number")
+            last_end = match.end()
+        text.append(part[last_end:], style=base_style)
+
+    def _append_data_dump(self, text: Text, data_bytes: List[str]) -> None:
+        """Append a readable hex dump of a DATA[..] byte array below the message."""
+        label = "DATA: "
+        indent = "    "
+        continuation_indent = " " * (len(indent) + len(label))
+        label_style = None if self._no_color else "dim"
+        byte_style = None if self._no_color else "logscope.number"
+
+        bytes_per_row = _DATA_BYTES_PER_ROW
+        if self._wrap_width and self._wrap_width > 0:
+            available = max(self._wrap_width - len(continuation_indent), 3)
+            # Each byte token takes 3 columns ("xx "), so this is how many fit.
+            bytes_per_row = max(available // 3, 1)
+
+        for row_start in range(0, len(data_bytes), bytes_per_row):
+            row = data_bytes[row_start:row_start + bytes_per_row]
+            text.append("\n")
+            if row_start == 0:
+                text.append(f"{indent}{label}", style=label_style)
+            else:
+                text.append(continuation_indent)
+            text.append(" ".join(row), style=byte_style)
+
+    def _append_message(
+        self,
+        text: Text,
+        message: str,
+        highlight: Optional[str],
+        highlight_color: str,
+        case_sensitive: bool,
+        message_style: Optional[str],
+    ) -> None:
+        """Append one (possibly wrapped) chunk of the message, applying custom
+        keyword highlighting and number highlighting."""
+        if highlight and highlight.strip():
+            keyword = highlight.strip()
+            if self._no_color:
+                text.append(message)
+            elif case_sensitive:
+                # Case-sensitive: simple split
+                parts = message.split(keyword)
+                if len(parts) > 1:
+                    for i, part in enumerate(parts):
+                        self._append_message_part(text, part, message_style)
+                        if i < len(parts) - 1:
+                            text.append(keyword, style=highlight_color)
+                else:
+                    self._append_message_part(text, message, message_style)
+            else:
+                # Case-insensitive: use regex to find matches and preserve original case
+                pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+                last_end = 0
+                for match in pattern.finditer(message):
+                    self._append_message_part(text, message[last_end:match.start()], message_style)
+                    text.append(match.group(), style=highlight_color)
+                    last_end = match.end()
+                self._append_message_part(text, message[last_end:], message_style)
+        else:
+            self._append_message_part(text, message, message_style)
 
     def format_log(self, entry: LogEntry, line_number: Optional[int] = None, highlight: Optional[str] = None, highlight_color: str = "bold magenta", case_sensitive: bool = False) -> Text:
         """Format a log entry with current theme's colors and emojis."""
@@ -82,36 +180,38 @@ class LogScopeManager:
         if line_number is not None:
             text.append(f"{line_number:>4} │ ", style="dim")
 
-        text.append(f"{icon} {entry.level:<7} ", style=style)
-
-        # Apply custom highlight to message if keyword is specified
-        if highlight and highlight.strip():
-            message = entry.message
-            keyword = highlight.strip()
-            if self._no_color:
-                text.append(message)
-            elif case_sensitive:
-                # Case-sensitive: simple split
-                parts = message.split(keyword)
-                if len(parts) > 1:
-                    for i, part in enumerate(parts):
-                        text.append(part)
-                        if i < len(parts) - 1:
-                            text.append(keyword, style=highlight_color)
-                else:
-                    text.append(message)
-            else:
-                # Case-insensitive: use regex to find matches and preserve original case
-                import re
-                pattern = re.compile(re.escape(keyword), re.IGNORECASE)
-                last_end = 0
-                for match in pattern.finditer(message):
-                    text.append(message[last_end:match.start()])
-                    text.append(match.group(), style=highlight_color)
-                    last_end = match.end()
-                text.append(message[last_end:])
+        if self._has_icons:
+            text.append(f"{icon} {entry.level:<7} ", style=style)
         else:
-            text.append(entry.message)
+            text.append(f"{entry.level:<7} ", style=style)
+
+        if entry.timestamp_text:
+            self._timestamp_width = max(self._timestamp_width, len(entry.timestamp_text))
+            text.append(f"{entry.timestamp_text:<{self._timestamp_width}} ", style="logscope.timestamp")
+            if entry.service:
+                self._module_width = max(self._module_width, len(entry.service))
+                text.append(f"{entry.service:<{self._module_width}}: ", style="logscope.module")
+
+        # The message renders a touch dimmer than the level/timestamp/module so those
+        # stay the visual anchor; --no-color keeps it fully unstyled for clean piping.
+        message_style = None if self._no_color else "dim"
+        prefix_width = len(text.plain)
+
+        if self._wrap_width and self._wrap_width > 0:
+            available = max(self._wrap_width - prefix_width, 10)
+            chunks = textwrap.wrap(
+                entry.message, width=available, break_long_words=False, break_on_hyphens=False
+            ) or [""]
+        else:
+            chunks = [entry.message]
+
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                text.append("\n" + " " * prefix_width)
+            self._append_message(text, chunk, highlight, highlight_color, case_sensitive, message_style)
+
+        if entry.data_bytes:
+            self._append_data_dump(text, entry.data_bytes)
 
         return text
 

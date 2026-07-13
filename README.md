@@ -22,12 +22,14 @@
 *   **Fast & Lightweight**: Tail files natively or stream huge data directly via pipes (`cat server.log | logscope`).
 *   **Colored & Structured Logs**: Automatically identifies `INFO`, `WARNING`, `ERROR`, `CRITICAL`, and `DEBUG`, applying beautiful typography.
 *   **Universal Parser**: Reads typical bracket logs (`[INFO]`) **and** parses modern NDJSON / JSON logs out of the box (e.g., Kubernetes, Docker, OpenTelemetry).
+*   **Zephyr RTOS Logs**: Recognizes Zephyr's `[hh:mm:ss.mmm,uuu] <lvl> module: message` format, even when UART noise corrupts it — missing timestamp/level brackets or a garbled line start are all tolerated. A `DATA[..]` byte dump embedded in the message is rendered separately as a readable hex dump.
+*   **Configurable Line Wrapping**: Set `--wrap-width` to keep long messages (and `DATA[..]` hex dumps) from running off the edge of the terminal — they wrap onto indented continuation lines instead.
 *   **Auto-Highlighting**: Magically highlights `IPs`, `URLs`, `Dates/Timestamps`, `UUIDs`, and `E-Mails` with dynamic colors.
 *   **Custom Keyword Highlighting**: Highlight specific keywords in log messages with `--highlight` and customize colors with `--highlight-color`.
 *   **Live Dashboard**: Watch logs stream in real-time alongside a live statistics panel keeping track of Error vs Info counts (`--dashboard`).
 *   **HTML Export**: Loved your console output so much you want to share it? Export the beautiful log structure directly to an HTML file to share with your team! (`--export-html results.html`)
 *   **Filtering**: Filter by one or more levels (`--level ERROR` or `--level ERROR,WARN,INFO`). Search by substring (`--search`) or regular expression (`--regex` / `-e`), with optional **case-sensitive** matching, **invert match** (`--invert-match` / `-v`), and grep-style context lines (`--context`, `--before-context`, `--after-context`).
-*   **Themes**: Choose from 6 beautiful themes (`default`, `neon`, `ocean`, `forest`, `minimal`, `spectra`) or create custom themes via config file.
+*   **Themes**: Choose from 7 beautiful themes (`default`, `neon`, `ocean`, `forest`, `minimal`, `spectra`, `plain`) or create custom themes via config file. `plain` skips emojis entirely and left-aligns log levels.
 *   **Plain output**: Use `--no-color` when you need unstyled text (e.g. piping to other tools or logs without ANSI codes).
 *   **Gzip logs**: Read `.gz` files directly—LogScope opens them as text without a manual `zcat` pipe.
 
@@ -96,6 +98,9 @@ logscope app.log --no-color
 
 # Compressed log file
 logscope archive/app.log.gz
+
+# Zephyr RTOS UART logs (tolerant of dropped brackets from noisy transports)
+logscope examples/zephyr_log
 ```
 
 JSON logs can use common fields such as `level`, `severity`, `severity_text`, `message`, `msg`,

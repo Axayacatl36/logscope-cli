@@ -24,7 +24,9 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "bold green",
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
-            "logscope.method": "bold cyan"
+            "logscope.method": "bold cyan",
+            "logscope.module": "bold blue",
+            "logscope.number": "dim cyan"
         }
     },
     "neon": {
@@ -50,7 +52,9 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "bold pink1",
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
-            "logscope.method": "bold cyan"
+            "logscope.method": "bold cyan",
+            "logscope.module": "italic magenta",
+            "logscope.number": "dim magenta"
         }
     },
     "ocean": {
@@ -76,7 +80,9 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "bold green",
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
-            "logscope.method": "bold cyan"
+            "logscope.method": "bold cyan",
+            "logscope.module": "bold deep_sky_blue3",
+            "logscope.number": "dim cyan"
         }
     },
     "forest": {
@@ -102,7 +108,9 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "bold green",
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
-            "logscope.method": "bold green1"
+            "logscope.method": "bold green1",
+            "logscope.module": "italic green3",
+            "logscope.number": "dim yellow"
         }
     },
     "minimal": {
@@ -128,7 +136,9 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "green",
             "logscope.status_warn": "yellow",
             "logscope.status_err": "red",
-            "logscope.method": "bold"
+            "logscope.method": "bold",
+            "logscope.module": "dim",
+            "logscope.number": "dim"
         }
     },
     "spectra": {
@@ -154,7 +164,37 @@ DEFAULT_THEMES = {
             "logscope.status_ok": "bold spring_green1",
             "logscope.status_warn": "bold gold1",
             "logscope.status_err": "bold red1",
-            "logscope.method": "bold deep_sky_blue1"
+            "logscope.method": "bold deep_sky_blue1",
+            "logscope.module": "italic bright_cyan",
+            "logscope.number": "dim bright_cyan"
+        }
+    },
+    "plain": {
+        "levels": {
+            "TRACE": ("", "dim white"),
+            "DEBUG": ("", "bold blue"),
+            "INFO": ("", "bold green"),
+            "NOTICE": ("", "bold cyan"),
+            "WARN": ("", "bold yellow"),
+            "ERROR": ("", "bold red"),
+            "CRITICAL": ("", "bold magenta"),
+            "ALERT": ("", "bold color(208)"),
+            "FATAL": ("", "bold dark_red"),
+            "UNKNOWN": ("", "dim white")
+        },
+        "highlights": {
+            "logscope.ip": "bold green",
+            "logscope.url": "underline blue",
+            "logscope.timestamp": "cyan",
+            "logscope.uuid": "bold magenta",
+            "logscope.email": "underline yellow",
+            "logscope.path": "dim blue",
+            "logscope.status_ok": "bold green",
+            "logscope.status_warn": "bold yellow",
+            "logscope.status_err": "bold red",
+            "logscope.method": "bold cyan",
+            "logscope.module": "bold blue",
+            "logscope.number": "dim cyan"
         }
     },
 }

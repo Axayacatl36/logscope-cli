@@ -95,7 +95,7 @@ def main(
     line_numbers: Annotated[bool, typer.Option("--line-numbers", "-n", help="Show line numbers for each log message")] = False,
     since: Annotated[Optional[str], typer.Option("--since", help="Show logs since a point in time (e.g. '1h', '30m', '2026-01-01T00:00:00')")] = None,
     until: Annotated[Optional[str], typer.Option("--until", help="Show logs until a point in time")] = None,
-    theme: Annotated[Optional[str], typer.Option("--theme", "-t", help="Choose a theme for colors and emojis (default, neon, ocean, forest, minimal)")] = None,
+    theme: Annotated[Optional[str], typer.Option("--theme", "-t", help="Choose a theme for colors and emojis (default, neon, ocean, forest, minimal, spectra, plain)")] = None,
     use_regex: Annotated[bool, typer.Option("--regex", "-e", help="Treat --search as a regular expression")] = False,
     case_sensitive: Annotated[bool, typer.Option("--case-sensitive", help="Case-sensitive substring or regex search")] = False,
     invert_match: Annotated[bool, typer.Option("--invert-match", "-v", help="Hide lines that match --search (grep -v)")] = False,
@@ -105,6 +105,7 @@ def main(
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colors and terminal highlighting")] = False,
     highlight: Annotated[Optional[str], typer.Option("--highlight", "-H", help="Highlight specific keyword in log messages (can be used multiple times)")] = None,
     highlight_color: Annotated[str, typer.Option("--highlight-color", help="Rich style for highlighted keywords (default: bold magenta)")] = "bold magenta",
+    wrap_width: Annotated[Optional[int], typer.Option("--wrap-width", help="Max line width before the message/DATA dump wraps to an indented continuation line (default: no wrapping)")] = None,
 ):
     """
     [blue]LogScope[/blue] parses standard logs and makes them [bold]beautiful[/bold] and [bold]readable[/bold].
@@ -149,11 +150,12 @@ def main(
     until_dt = parse_relative_time(until) if until else None
 
     load_theme(theme, no_color=no_color)
+    manager.set_wrap_width(wrap_width)
 
     # Inform user about themes only if they are using default and haven't hidden the tip by having a config
     has_config = Path(".logscoperc").exists() or (Path.home() / ".logscoperc").exists()
     if not theme and not has_config:
-        manager.console.print("[dim]💡 Tip: Use '--theme' or create a '.logscoperc' file to change colors. Themes: neon, ocean, forest, minimal[/dim]\n")
+        manager.console.print("[dim]💡 Tip: Use '--theme' or create a '.logscoperc' file to change colors. Themes: neon, ocean, forest, minimal, spectra, plain[/dim]\n")
 
     try:
         if dashboard:

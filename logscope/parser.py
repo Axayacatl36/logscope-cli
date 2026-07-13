@@ -2,7 +2,7 @@ import re
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 # Compiled regex patterns for performance
 _BRACKET_LEVEL_PATTERN = re.compile(
@@ -34,6 +34,34 @@ _MONTH_MAP = {
     'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
 }
 
+# Zephyr RTOS log lines look like "[00:00:06.900,512] <inf> module: message".
+# They're commonly streamed over UART, where dropped/garbled bytes routinely eat
+# the brackets around the timestamp or the angle brackets around the level tag,
+# or glue stray characters onto the front of the line. Each piece is therefore
+# matched independently (with its delimiters optional) rather than as one rigid
+# line-level pattern, so a corrupted delimiter doesn't stop the rest of the line
+# from being recognized.
+_ZEPHYR_TIMESTAMP_PATTERN = re.compile(r'\[?(\d{2}:\d{2}:\d{2}\.\d{3},\d{3})\]?')
+# Fallback for uptime formats that don't match the digit layout above (e.g. a plain
+# tick counter or a timestamp without the ",uuu" suffix): treat whatever sits
+# between a bracket pair as the timestamp. This is only trusted once a level tag
+# is also found afterward (see _parse_zephyr_line), so it can't hijack plain
+# "[LEVEL] message" lines that have no separate timestamp field.
+_GENERIC_BRACKET_PATTERN = re.compile(r'\[([^\[\]]+)\]')
+_ZEPHYR_LEVEL_PATTERN = re.compile(r'<?\b(err|wrn|inf|dbg)\b>?', re.IGNORECASE)
+_ZEPHYR_MODULE_PATTERN = re.compile(r'([\w./-]+):\s*(.*)$')
+_ZEPHYR_LEVEL_ABBR_MAP = {
+    "err": "ERROR",
+    "wrn": "WARN",
+    "inf": "INFO",
+    "dbg": "DEBUG",
+}
+
+# A "DATA[..]" segment embedded in a message is a raw uint8_t byte dump, e.g.
+# "DATA[12 34 56 78 90 a1 b2 c3 d4 e5 f6 ff ff ff ee ab ab ab]". It's pulled out
+# of the message so the viewer can render it separately as a readable hex dump.
+_DATA_SEGMENT_PATTERN = re.compile(r'DATA\[([^\]]*)\]', re.IGNORECASE)
+
 @dataclass
 class LogEntry:
     level: str
@@ -43,6 +71,12 @@ class LogEntry:
     service: Optional[str] = None
     trace_id: Optional[str] = None
     span_id: Optional[str] = None
+    # Display-ready timestamp text for formats (e.g. Zephyr uptime) whose timestamp
+    # isn't a real calendar date/time and therefore can't populate `timestamp` above.
+    timestamp_text: Optional[str] = None
+    # Byte values (normalized to lowercase two-digit hex, e.g. "0a") pulled out of
+    # a "DATA[..]" segment in the message, for the viewer to render as a hex dump.
+    data_bytes: Optional[List[str]] = None
 
 
 # Level normalization constants
@@ -123,10 +157,103 @@ def _extract_json_observability(data: dict) -> Tuple[Optional[str], Optional[str
 
     return service, trace_id, span_id
 
+def _parse_zephyr_line(line: str) -> Optional[LogEntry]:
+    """Parse a Zephyr-style log line, tolerating missing/garbled delimiters.
+
+    The distinctive "HH:MM:SS.mmm,uuu" uptime timestamp is enough on its own to
+    recognize the line as Zephyr; the surrounding brackets, the level's angle
+    brackets, and any junk prefix (e.g. from a torn UART frame) are all optional.
+    If that specific digit layout isn't found (some builds log plain tick counters
+    or a coarser timestamp), any bracketed segment is accepted as the timestamp
+    instead - but only once a level tag is also found afterward, so this fallback
+    can't hijack plain "[LEVEL] message" lines that have no separate timestamp.
+    """
+    ts_match = _ZEPHYR_TIMESTAMP_PATTERN.search(line)
+    if ts_match:
+        timestamp_text = f"[{ts_match.group(1)}]"
+        remainder = line[ts_match.end():]
+        require_level = False
+    else:
+        bracket_match = _GENERIC_BRACKET_PATTERN.search(line)
+        if not bracket_match:
+            return None
+        timestamp_text = f"[{bracket_match.group(1)}]"
+        remainder = line[bracket_match.end():]
+        require_level = True
+
+    level = None
+    level_match = _ZEPHYR_LEVEL_PATTERN.search(remainder)
+    if level_match:
+        level = _ZEPHYR_LEVEL_ABBR_MAP[level_match.group(1).lower()]
+        remainder = remainder[level_match.end():]
+    else:
+        # Fall back to a spelled-out level (e.g. "INFO" with no angle brackets at all)
+        full_match = _BRACKET_LEVEL_PATTERN.search(remainder) or _BRACKETLESS_LEVEL_PATTERN.search(remainder)
+        if full_match:
+            level = _normalize_level(full_match.group(1))
+            remainder = remainder[full_match.end():]
+
+    if level is None and require_level:
+        return None
+
+    remainder = remainder.strip()
+
+    service = None
+    module_match = _ZEPHYR_MODULE_PATTERN.match(remainder)
+    if module_match:
+        service = module_match.group(1)
+        message = module_match.group(2).strip()
+    else:
+        message = remainder
+
+    return LogEntry(
+        level=level or "UNKNOWN",
+        message=message,
+        raw=line,
+        service=service,
+        timestamp_text=timestamp_text,
+    )
+
+
+def _extract_data_segment(message: str) -> Tuple[str, Optional[List[str]]]:
+    """Pull a "DATA[..]" hex byte dump out of a message, if present.
+
+    Returns the message with the segment removed, and the byte values
+    normalized to lowercase two-digit hex (e.g. "0a"), or (message, None) if
+    no valid segment was found.
+    """
+    match = _DATA_SEGMENT_PATTERN.search(message)
+    if not match:
+        return message, None
+
+    data_bytes = []
+    for token in match.group(1).split():
+        try:
+            data_bytes.append(f"{int(token, 16):02x}")
+        except ValueError:
+            return message, None
+
+    if not data_bytes:
+        return message, None
+
+    cleaned_message = (message[:match.start()] + message[match.end():]).strip()
+    return cleaned_message, data_bytes
+
+
 def parse_line(line: str) -> LogEntry:
+    """Parse a single line of log, extracting severity level and any DATA[..] byte dump."""
+    entry = _parse_line_impl(line)
+    message, data_bytes = _extract_data_segment(entry.message)
+    if data_bytes is not None:
+        entry.message = message
+        entry.data_bytes = data_bytes
+    return entry
+
+
+def _parse_line_impl(line: str) -> LogEntry:
     """Parse a single line of log and extract severity level."""
     line = line.strip()
-    
+
     # 1. Check if JSON log object (common in docker/kubernetes/modern APIs)
     if line.startswith('{') and line.endswith('}'):
         try:
@@ -164,7 +291,12 @@ def parse_line(line: str) -> LogEntry:
         except json.JSONDecodeError:
             pass
 
-    # 2. Try typical log formats like [INFO], (WARN), ERROR:
+    # 2. Zephyr RTOS logs (e.g. "[00:00:06.900,512] <inf> module: message")
+    zephyr_entry = _parse_zephyr_line(line)
+    if zephyr_entry is not None:
+        return zephyr_entry
+
+    # 3. Try typical log formats like [INFO], (WARN), ERROR:
     match = _BRACKET_LEVEL_PATTERN.search(line)
     if not match:
         # Try finding without brackets as a fallback, e.g. "INFO:" or "INFO - "
