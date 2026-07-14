@@ -6,6 +6,7 @@ something[00:00:06.900,512] <err> Less4_Exer2: The factorial of  2 = 2
 [00:00:06.900,543] <inf> Less4_Exer2: The factorial of  5 = 120 
 [00:00:06.900,543] <inf> Less4_Exer2: The factorial of  6 = 720 
 [00:00:06.900,543] <inf> Less4_Exer2: The factorial of  7 = 5040 
+DATA[1234567890]
 [00:00:06.900,543] <inf> Less4_Exer2: The factorial of  8 = 40320 
 [00:00:06.900,573] <inf> Less4_Exer2: The factorial of  9 = 362880 
 [00:00:06.900,573] inf> Less4_Exer2: The factorial of 10 = 3628800

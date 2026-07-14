@@ -202,6 +202,15 @@ def test_parse_no_data_segment_leaves_entry_unchanged():
     assert entry.data_bytes is None
 
 
+def test_parse_standalone_data_line_has_empty_message_and_unknown_level():
+    """A line that's nothing but "DATA[..]" (e.g. printed as a follow-up UART
+    frame) has no level/module of its own."""
+    entry = parse_line("DATA[12 34 56 78]")
+    assert entry.level == "UNKNOWN"
+    assert entry.message == ""
+    assert entry.data_bytes == ["12", "34", "56", "78"]
+
+
 def test_parse_opentelemetry_json_fields():
     log_line = (
         '{"severity_text":"warn","body":"checkout latency high",'

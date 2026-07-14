@@ -62,6 +62,31 @@ def test_format_log_renders_data_bytes_without_separator_when_source_had_none():
     assert "12 34 56 78" not in lines[1]
 
 
+def test_format_log_standalone_data_line_has_no_level_header():
+    """A line that's nothing but "DATA[..]" belongs to the previous log entry,
+    so it shouldn't show a bogus UNKNOWN level."""
+    entry = LogEntry(
+        level="UNKNOWN",
+        message="",
+        raw="DATA[12 34 56 78]",
+        data_bytes=["12", "34", "56", "78"],
+    )
+    text = manager.format_log(entry, line_number=2)
+    assert "UNKNOWN" not in text.plain
+    assert text.plain == "   2 │     DATA: 12 34 56 78"
+
+
+def test_format_log_standalone_data_line_without_line_number():
+    entry = LogEntry(
+        level="UNKNOWN",
+        message="",
+        raw="DATA[12 34]",
+        data_bytes=["12", "34"],
+    )
+    text = manager.format_log(entry, line_number=None)
+    assert text.plain == "    DATA: 12 34"
+
+
 def test_format_log_without_data_bytes_has_no_extra_lines():
     entry = LogEntry(level="INFO", message="no payload here", raw="[INFO] no payload here")
     text = manager.format_log(entry, line_number=None)

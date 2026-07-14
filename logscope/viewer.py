@@ -101,7 +101,9 @@ class LogScopeManager:
             return
         text.append(part, style=base_style)
 
-    def _append_data_dump(self, text: Text, data_bytes: List[str], spaced: bool) -> None:
+    def _append_data_dump(
+        self, text: Text, data_bytes: List[str], spaced: bool, leading_newline: bool = True
+    ) -> None:
         """Append a hex dump of a DATA[..] byte array below the message, using the
         same byte separator (space or none) the original segment used."""
         label = "DATA: "
@@ -119,7 +121,8 @@ class LogScopeManager:
 
         for row_start in range(0, len(data_bytes), bytes_per_row):
             row = data_bytes[row_start:row_start + bytes_per_row]
-            text.append("\n")
+            if row_start > 0 or leading_newline:
+                text.append("\n")
             if row_start == 0:
                 text.append(f"{indent}{label}", style=label_style)
             else:
@@ -165,9 +168,27 @@ class LogScopeManager:
 
     def format_log(self, entry: LogEntry, line_number: Optional[int] = None, highlight: Optional[str] = None, highlight_color: str = "bold magenta", case_sensitive: bool = False) -> Text:
         """Format a log entry with current theme's colors and emojis."""
+        text = Text()
+
+        # A line that's nothing but a "DATA[..]" dump belongs to the previous log
+        # line (e.g. a UART frame that printed its payload as a follow-up line) -
+        # there's no real level to show (it would just be UNKNOWN), so skip the
+        # level/timestamp/module header entirely and render only the hex dump.
+        is_data_only = (
+            entry.level == "UNKNOWN"
+            and not entry.message
+            and not entry.timestamp_text
+            and not entry.service
+            and entry.data_bytes
+        )
+        if is_data_only:
+            if line_number is not None:
+                text.append(f"{line_number:>4} │ ", style="dim")
+            self._append_data_dump(text, entry.data_bytes, entry.data_bytes_spaced, leading_newline=False)
+            return text
+
         icon, style = self.level_mapping.get(entry.level, self.level_mapping.get("UNKNOWN", ("⚪", "dim white")))
 
-        text = Text()
         if line_number is not None:
             text.append(f"{line_number:>4} │ ", style="dim")
 
