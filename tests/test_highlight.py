@@ -134,7 +134,8 @@ def test_format_log_shows_zephyr_timestamp_and_module():
     )
     text = manager.format_log(entry, line_number=None)
     assert "[00:00:06.900,512]" in text.plain
-    assert "Less4_Exer2:" in text.plain
+    assert "Less4_Exer2" in text.plain
+    assert "Less4_Exer2:" not in text.plain
     assert "The factorial of  1 = 1" in text.plain
 
 

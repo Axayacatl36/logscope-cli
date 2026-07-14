@@ -190,7 +190,7 @@ class LogScopeManager:
             text.append(f"{entry.timestamp_text:<{self._timestamp_width}} ", style="logscope.timestamp")
             if entry.service:
                 self._module_width = max(self._module_width, len(entry.service))
-                text.append(f"{entry.service:<{self._module_width}}: ", style="logscope.module")
+                text.append(f"{entry.service:<{self._module_width}} ", style="logscope.module")
 
         # The message renders a touch dimmer than the level/timestamp/module so those
         # stay the visual anchor; --no-color keeps it fully unstyled for clean piping.
