@@ -166,7 +166,7 @@ DEFAULT_THEMES = {
     "simple": {
         "levels": {
             "TRACE": ("", "dim white"),
-            "DEBUG": ("", "bold blue"),
+            "DEBUG": ("", "dim"),
             "INFO": ("", "bold green"),
             "NOTICE": ("", "bold cyan"),
             "WARN": ("", "bold yellow"),

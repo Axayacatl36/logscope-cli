@@ -16,23 +16,28 @@ def _message_style(text):
     return text.spans[-1].style
 
 
-def test_format_log_error_message_is_white():
+def test_format_log_message_matches_level_color():
+    """The message should render in the same style as its level's icon/label,
+    except INFO and DEBUG which get their own dedicated treatment."""
     manager.apply_theme("default", no_color=False)
-    entry = LogEntry(level="ERROR", message="Database timeout", raw="[ERROR] Database timeout")
-    text = manager.format_log(entry, line_number=None)
-    assert _message_style(text) == "white"
+    for level in ("ERROR", "WARN", "CRITICAL", "NOTICE"):
+        entry = LogEntry(level=level, message="something happened", raw=f"[{level}] something happened")
+        text = manager.format_log(entry, line_number=None)
+        expected_style = manager.level_mapping[level][1]
+        assert _message_style(text) == expected_style
 
 
-def test_format_log_warn_message_is_white():
-    manager.apply_theme("default", no_color=False)
-    entry = LogEntry(level="WARN", message="High memory usage", raw="[WARN] High memory usage")
-    text = manager.format_log(entry, line_number=None)
-    assert _message_style(text) == "white"
-
-
-def test_format_log_info_message_stays_dim():
+def test_format_log_info_message_is_soft_white():
     manager.apply_theme("default", no_color=False)
     entry = LogEntry(level="INFO", message="System started", raw="[INFO] System started")
+    text = manager.format_log(entry, line_number=None)
+    assert _message_style(text) == "white"
+
+
+def test_format_log_debug_message_stays_dim():
+    """DEBUG keeps the plain gray the message used to render in for every level."""
+    manager.apply_theme("default", no_color=False)
+    entry = LogEntry(level="DEBUG", message="opening connection", raw="[DEBUG] opening connection")
     text = manager.format_log(entry, line_number=None)
     assert _message_style(text) == "dim"
 
