@@ -183,17 +183,10 @@ class LogScopeManager:
                 self._module_width = max(self._module_width, len(entry.service))
                 text.append(f"{entry.service:<{self._module_width}} ", style="logscope.module")
 
-        # The message takes on its level's own color so severity stays visible at a
-        # glance; DEBUG keeps the plain gray, and INFO gets a soft white rather than
-        # its bold level color. --no-color keeps it fully unstyled for clean piping.
-        if self._no_color:
-            message_style = None
-        elif entry.level == "DEBUG":
-            message_style = "dim"
-        elif entry.level == "INFO":
-            message_style = "white"
-        else:
-            message_style = style
+        # The message renders in the same color as its level's icon/label, so
+        # severity stays visible at a glance. --no-color keeps it fully unstyled
+        # for clean piping.
+        message_style = None if self._no_color else style
         prefix_width = len(text.plain)
 
         if self._wrap_width and self._wrap_width > 0:

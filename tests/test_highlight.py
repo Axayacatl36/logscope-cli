@@ -17,29 +17,13 @@ def _message_style(text):
 
 
 def test_format_log_message_matches_level_color():
-    """The message should render in the same style as its level's icon/label,
-    except INFO and DEBUG which get their own dedicated treatment."""
+    """The message should render in the same color as its level's icon/label."""
     manager.apply_theme("default", no_color=False)
-    for level in ("ERROR", "WARN", "CRITICAL", "NOTICE"):
+    for level in ("INFO", "ERROR", "WARN", "CRITICAL", "NOTICE", "DEBUG"):
         entry = LogEntry(level=level, message="something happened", raw=f"[{level}] something happened")
         text = manager.format_log(entry, line_number=None)
         expected_style = manager.level_mapping[level][1]
         assert _message_style(text) == expected_style
-
-
-def test_format_log_info_message_is_soft_white():
-    manager.apply_theme("default", no_color=False)
-    entry = LogEntry(level="INFO", message="System started", raw="[INFO] System started")
-    text = manager.format_log(entry, line_number=None)
-    assert _message_style(text) == "white"
-
-
-def test_format_log_debug_message_stays_dim():
-    """DEBUG keeps the plain gray the message used to render in for every level."""
-    manager.apply_theme("default", no_color=False)
-    entry = LogEntry(level="DEBUG", message="opening connection", raw="[DEBUG] opening connection")
-    text = manager.format_log(entry, line_number=None)
-    assert _message_style(text) == "dim"
 
 
 def test_format_log_renders_data_bytes_below_message():
