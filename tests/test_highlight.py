@@ -11,6 +11,32 @@ def test_format_log_without_highlight():
     assert "System started" in text.plain
 
 
+def _message_style(text):
+    """Return the style applied to the message portion (last span)."""
+    return text.spans[-1].style
+
+
+def test_format_log_error_message_is_white():
+    manager.apply_theme("default", no_color=False)
+    entry = LogEntry(level="ERROR", message="Database timeout", raw="[ERROR] Database timeout")
+    text = manager.format_log(entry, line_number=None)
+    assert _message_style(text) == "white"
+
+
+def test_format_log_warn_message_is_white():
+    manager.apply_theme("default", no_color=False)
+    entry = LogEntry(level="WARN", message="High memory usage", raw="[WARN] High memory usage")
+    text = manager.format_log(entry, line_number=None)
+    assert _message_style(text) == "white"
+
+
+def test_format_log_info_message_stays_dim():
+    manager.apply_theme("default", no_color=False)
+    entry = LogEntry(level="INFO", message="System started", raw="[INFO] System started")
+    text = manager.format_log(entry, line_number=None)
+    assert _message_style(text) == "dim"
+
+
 def test_format_log_renders_data_bytes_below_message():
     """A DATA[..] byte dump should render on its own line(s) below the message,
     wrapped at 16 bytes per row."""

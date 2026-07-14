@@ -54,7 +54,6 @@ class LogScopeHighlighter(RegexHighlighter):
     ]
 
 
-_NUMBER_PATTERN = re.compile(r'\b(0[xX])[0-9a-fA-F]+\b|-?\d+(?:\.\d+)?')
 _DATA_BYTES_PER_ROW = 16
 
 
@@ -96,21 +95,11 @@ class LogScopeManager:
         )
 
     def _append_message_part(self, text: Text, part: str, base_style: Optional[str]) -> None:
-        """Append a message fragment, additionally highlighting embedded numbers."""
+        """Append a message fragment."""
         if self._no_color:
             text.append(part)
             return
-        last_end = 0
-        for match in _NUMBER_PATTERN.finditer(part):
-            text.append(part[last_end:match.start()], style=base_style)
-            hex_prefix = match.group(1)
-            if hex_prefix:
-                text.append(hex_prefix, style=base_style)
-                text.append(match.group()[len(hex_prefix):], style="logscope.number")
-            else:
-                text.append(match.group(), style="logscope.number")
-            last_end = match.end()
-        text.append(part[last_end:], style=base_style)
+        text.append(part, style=base_style)
 
     def _append_data_dump(self, text: Text, data_bytes: List[str]) -> None:
         """Append a readable hex dump of a DATA[..] byte array below the message."""
@@ -118,7 +107,7 @@ class LogScopeManager:
         indent = "    "
         continuation_indent = " " * (len(indent) + len(label))
         label_style = None if self._no_color else "dim"
-        byte_style = None if self._no_color else "logscope.number"
+        byte_style = label_style
 
         bytes_per_row = _DATA_BYTES_PER_ROW
         if self._wrap_width and self._wrap_width > 0:
@@ -193,8 +182,14 @@ class LogScopeManager:
                 text.append(f"{entry.service:<{self._module_width}} ", style="logscope.module")
 
         # The message renders a touch dimmer than the level/timestamp/module so those
-        # stay the visual anchor; --no-color keeps it fully unstyled for clean piping.
-        message_style = None if self._no_color else "dim"
+        # stay the visual anchor; ERROR/WARN messages render in plain white instead so
+        # they still stand out. --no-color keeps it fully unstyled for clean piping.
+        if self._no_color:
+            message_style = None
+        elif entry.level in ("ERROR", "WARN"):
+            message_style = "white"
+        else:
+            message_style = "dim"
         prefix_width = len(text.plain)
 
         if self._wrap_width and self._wrap_width > 0:

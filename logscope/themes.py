@@ -25,8 +25,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
             "logscope.method": "bold cyan",
-            "logscope.module": "bold blue",
-            "logscope.number": "dim cyan"
+            "logscope.module": "bold blue"
         }
     },
     "neon": {
@@ -53,8 +52,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
             "logscope.method": "bold cyan",
-            "logscope.module": "italic magenta",
-            "logscope.number": "dim magenta"
+            "logscope.module": "italic magenta"
         }
     },
     "ocean": {
@@ -81,8 +79,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
             "logscope.method": "bold cyan",
-            "logscope.module": "bold deep_sky_blue3",
-            "logscope.number": "dim cyan"
+            "logscope.module": "bold deep_sky_blue3"
         }
     },
     "forest": {
@@ -109,8 +106,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
             "logscope.method": "bold green1",
-            "logscope.module": "italic green3",
-            "logscope.number": "dim yellow"
+            "logscope.module": "italic green3"
         }
     },
     "minimal": {
@@ -137,8 +133,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "yellow",
             "logscope.status_err": "red",
             "logscope.method": "bold",
-            "logscope.module": "dim",
-            "logscope.number": "dim"
+            "logscope.module": "dim"
         }
     },
     "spectra": {
@@ -165,8 +160,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold gold1",
             "logscope.status_err": "bold red1",
             "logscope.method": "bold deep_sky_blue1",
-            "logscope.module": "italic bright_cyan",
-            "logscope.number": "dim bright_cyan"
+            "logscope.module": "italic bright_cyan"
         }
     },
     "simple": {
@@ -193,8 +187,7 @@ DEFAULT_THEMES = {
             "logscope.status_warn": "bold yellow",
             "logscope.status_err": "bold red",
             "logscope.method": "bold cyan",
-            "logscope.module": "bold blue",
-            "logscope.number": "dim cyan"
+            "logscope.module": "bold blue"
         }
     },
 }
