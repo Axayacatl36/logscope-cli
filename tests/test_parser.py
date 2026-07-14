@@ -140,6 +140,26 @@ def test_parse_data_segment_normalizes_single_digit_hex_bytes():
     assert entry.data_bytes == ["01", "0a", "f0"]
 
 
+def test_parse_data_segment_without_separators():
+    """Bytes run together with no whitespace should still split into 2-digit bytes."""
+    entry = parse_line(
+        "[00:00:06.900,573] <inf> Less4_Exer2: msg "
+        "DATA[1234567890a1b2c3d4e5f6ffffffeeababab]"
+    )
+    assert entry.message == "msg"
+    assert entry.data_bytes == [
+        "12", "34", "56", "78", "90", "a1", "b2", "c3",
+        "d4", "e5", "f6", "ff", "ff", "ff", "ee", "ab", "ab", "ab",
+    ]
+
+
+def test_parse_data_segment_without_separators_odd_length():
+    """A trailing lone hex digit becomes its own zero-padded byte."""
+    entry = parse_line("[INFO] payload DATA[abc]")
+    assert entry.message == "payload"
+    assert entry.data_bytes == ["ab", "0c"]
+
+
 def test_parse_no_data_segment_leaves_entry_unchanged():
     entry = parse_line("[INFO] System up and running.")
     assert entry.message == "System up and running."

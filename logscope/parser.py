@@ -218,16 +218,25 @@ def _parse_zephyr_line(line: str) -> Optional[LogEntry]:
 def _extract_data_segment(message: str) -> Tuple[str, Optional[List[str]]]:
     """Pull a "DATA[..]" hex byte dump out of a message, if present.
 
-    Returns the message with the segment removed, and the byte values
-    normalized to lowercase two-digit hex (e.g. "0a"), or (message, None) if
-    no valid segment was found.
+    Bytes may be given whitespace-separated ("12 34 56") or run together with
+    no separator at all ("123456"), in which case every 2 hex digits are
+    treated as one byte. Returns the message with the segment removed, and the
+    byte values normalized to lowercase two-digit hex (e.g. "0a"), or
+    (message, None) if no valid segment was found.
     """
     match = _DATA_SEGMENT_PATTERN.search(message)
     if not match:
         return message, None
 
+    tokens = match.group(1).split()
+    if len(tokens) <= 1:
+        # No whitespace between bytes: split the run of hex digits into pairs.
+        compact = tokens[0] if tokens else ""
+        if re.fullmatch(r'[0-9a-fA-F]+', compact):
+            tokens = [compact[i:i + 2] for i in range(0, len(compact), 2)]
+
     data_bytes = []
-    for token in match.group(1).split():
+    for token in tokens:
         try:
             data_bytes.append(f"{int(token, 16):02x}")
         except ValueError:
