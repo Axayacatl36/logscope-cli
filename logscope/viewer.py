@@ -370,12 +370,20 @@ def iter_search_context(
         before.append((line_number, entry))
 
 
+def _strip_nul_bytes(line: str) -> str:
+    """Drop stray NUL bytes some UART framings (e.g. "\\r\\n\\0" line endings)
+    leave attached to the start of the following line; left in place they'd
+    otherwise defeat startswith/regex-anchored checks throughout the parser."""
+    return line.replace("\x00", "")
+
+
 def get_lines(file: TextIO, follow: bool):
     """Generator that yields (line_number, line) tuples from a file, optionally tailing it."""
     line_number = 0
     # yield existing lines
     for line in file:
         line_number += 1
+        line = _strip_nul_bytes(line)
         if line.strip():
             yield line_number, line
 
@@ -391,6 +399,7 @@ def get_lines(file: TextIO, follow: bool):
                 time.sleep(0.1)
                 continue
             line_number += 1
+            line = _strip_nul_bytes(line)
             if line.strip():
                 yield line_number, line
     except KeyboardInterrupt:

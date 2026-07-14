@@ -1,8 +1,9 @@
+import io
 import re
 from datetime import datetime
 
-from logscope.viewer import line_passes_level, line_passes_search, parse_level_filter, line_passes_filters, line_passes_min_level
-from logscope.parser import LogEntry
+from logscope.viewer import get_lines, line_passes_level, line_passes_search, parse_level_filter, line_passes_filters, line_passes_min_level
+from logscope.parser import LogEntry, parse_line
 
 
 def test_parse_level_filter_single():
@@ -167,3 +168,23 @@ def test_line_passes_filters_with_min_level():
     # Combined with time filter
     since = datetime(2026, 4, 5, 9, 0, 0)
     assert line_passes_filters(entry, None, None, since, None, pattern=None, use_regex=False, case_sensitive=False, invert_match=False, min_level="WARN") is True
+
+
+def test_get_lines_strips_leaked_nul_bytes():
+    """Some UART framings use "\\r\\n\\0" line endings; the trailing NUL lands on
+    the front of the *next* line as a stray byte. It must be stripped so it
+    doesn't defeat startswith/regex-anchored checks in the parser (e.g. a
+    standalone "DATA[..]" line silently gaining a non-empty message)."""
+    raw = (
+        "[00:00:06.900,573] <inf> mod: msg\r\n"
+        "\x00DATA[12 34 56 78]\r\n"
+        "\x00[00:00:06.900,600] <err> mod: next\r\n"
+    )
+    lines = list(get_lines(io.StringIO(raw), follow=False))
+    assert len(lines) == 3
+    assert all("\x00" not in line for _, line in lines)
+
+    data_entry = parse_line(lines[1][1])
+    assert data_entry.level == "UNKNOWN"
+    assert data_entry.message == ""
+    assert data_entry.data_bytes == ["12", "34", "56", "78"]
