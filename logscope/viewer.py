@@ -101,19 +101,21 @@ class LogScopeManager:
             return
         text.append(part, style=base_style)
 
-    def _append_data_dump(self, text: Text, data_bytes: List[str]) -> None:
-        """Append a readable hex dump of a DATA[..] byte array below the message."""
+    def _append_data_dump(self, text: Text, data_bytes: List[str], spaced: bool) -> None:
+        """Append a hex dump of a DATA[..] byte array below the message, using the
+        same byte separator (space or none) the original segment used."""
         label = "DATA: "
         indent = "    "
         continuation_indent = " " * (len(indent) + len(label))
         label_style = None if self._no_color else "dim"
         byte_style = label_style
-
+        separator = " " if spaced else ""
         bytes_per_row = _DATA_BYTES_PER_ROW
+
         if self._wrap_width and self._wrap_width > 0:
-            available = max(self._wrap_width - len(continuation_indent), 3)
-            # Each byte token takes 3 columns ("xx "), so this is how many fit.
-            bytes_per_row = max(available // 3, 1)
+            available = max(self._wrap_width - len(continuation_indent), 2)
+            # Each byte token takes 2 columns, plus 1 more if separated ("xx ").
+            bytes_per_row = max(available // (3 if spaced else 2), 1)
 
         for row_start in range(0, len(data_bytes), bytes_per_row):
             row = data_bytes[row_start:row_start + bytes_per_row]
@@ -122,7 +124,7 @@ class LogScopeManager:
                 text.append(f"{indent}{label}", style=label_style)
             else:
                 text.append(continuation_indent)
-            text.append(" ".join(row), style=byte_style)
+            text.append(separator.join(row), style=byte_style)
 
     def _append_message(
         self,
@@ -208,7 +210,7 @@ class LogScopeManager:
             self._append_message(text, chunk, highlight, highlight_color, case_sensitive, message_style)
 
         if entry.data_bytes:
-            self._append_data_dump(text, entry.data_bytes)
+            self._append_data_dump(text, entry.data_bytes, entry.data_bytes_spaced)
 
         return text
 

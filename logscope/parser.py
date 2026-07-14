@@ -56,6 +56,22 @@ _ZEPHYR_LEVEL_ABBR_MAP = {
     "inf": "INFO",
     "dbg": "DEBUG",
 }
+# Fallback for a level tag missing one of its own letters (e.g. "<in>" instead of
+# "<inf>"). Each 3-letter abbreviation with any single character dropped maps back
+# to the same level. Only trusted when a bracket is still present on one side (see
+# _ZEPHYR_LEVEL_FUZZY_PATTERN below), so it can't misfire on ordinary two-letter
+# words elsewhere in the line.
+_ZEPHYR_LEVEL_FUZZY_ABBR_MAP = {
+    fragment: level
+    for full, level in _ZEPHYR_LEVEL_ABBR_MAP.items()
+    for i in range(len(full))
+    for fragment in [full[:i] + full[i + 1:]]
+}
+_ZEPHYR_LEVEL_FUZZY_ALTERNATION = "|".join(sorted(_ZEPHYR_LEVEL_FUZZY_ABBR_MAP, key=len, reverse=True))
+_ZEPHYR_LEVEL_FUZZY_PATTERN = re.compile(
+    rf'<({_ZEPHYR_LEVEL_FUZZY_ALTERNATION})\b>?|\b({_ZEPHYR_LEVEL_FUZZY_ALTERNATION})>',
+    re.IGNORECASE,
+)
 
 # A "DATA[..]" segment embedded in a message is a raw uint8_t byte dump, e.g.
 # "DATA[12 34 56 78 90 a1 b2 c3 d4 e5 f6 ff ff ff ee ab ab ab]". It's pulled out
@@ -77,6 +93,10 @@ class LogEntry:
     # Byte values (normalized to lowercase two-digit hex, e.g. "0a") pulled out of
     # a "DATA[..]" segment in the message, for the viewer to render as a hex dump.
     data_bytes: Optional[List[str]] = None
+    # Whether the bytes were whitespace-separated in the original DATA[..] segment
+    # (e.g. "12 34") as opposed to run together (e.g. "1234") - the viewer mirrors
+    # this instead of always inserting its own separator.
+    data_bytes_spaced: bool = True
 
 
 # Level normalization constants
@@ -187,11 +207,19 @@ def _parse_zephyr_line(line: str) -> Optional[LogEntry]:
         level = _ZEPHYR_LEVEL_ABBR_MAP[level_match.group(1).lower()]
         remainder = remainder[level_match.end():]
     else:
-        # Fall back to a spelled-out level (e.g. "INFO" with no angle brackets at all)
-        full_match = _BRACKET_LEVEL_PATTERN.search(remainder) or _BRACKETLESS_LEVEL_PATTERN.search(remainder)
-        if full_match:
-            level = _normalize_level(full_match.group(1))
-            remainder = remainder[full_match.end():]
+        # Fall back to a level tag missing one of its own letters (e.g. "<in>"),
+        # as long as a bracket still anchors it.
+        fuzzy_match = _ZEPHYR_LEVEL_FUZZY_PATTERN.search(remainder)
+        if fuzzy_match:
+            fragment = fuzzy_match.group(1) or fuzzy_match.group(2)
+            level = _ZEPHYR_LEVEL_FUZZY_ABBR_MAP[fragment.lower()]
+            remainder = remainder[fuzzy_match.end():]
+        else:
+            # Fall back to a spelled-out level (e.g. "INFO" with no angle brackets at all)
+            full_match = _BRACKET_LEVEL_PATTERN.search(remainder) or _BRACKETLESS_LEVEL_PATTERN.search(remainder)
+            if full_match:
+                level = _normalize_level(full_match.group(1))
+                remainder = remainder[full_match.end():]
 
     if level is None and require_level:
         return None
@@ -215,21 +243,24 @@ def _parse_zephyr_line(line: str) -> Optional[LogEntry]:
     )
 
 
-def _extract_data_segment(message: str) -> Tuple[str, Optional[List[str]]]:
+def _extract_data_segment(message: str) -> Tuple[str, Optional[List[str]], bool]:
     """Pull a "DATA[..]" hex byte dump out of a message, if present.
 
     Bytes may be given whitespace-separated ("12 34 56") or run together with
     no separator at all ("123456"), in which case every 2 hex digits are
-    treated as one byte. Returns the message with the segment removed, and the
-    byte values normalized to lowercase two-digit hex (e.g. "0a"), or
-    (message, None) if no valid segment was found.
+    treated as one byte. Returns the message with the segment removed, the byte
+    values normalized to lowercase two-digit hex (e.g. "0a"), and whether the
+    original was whitespace-separated (so the viewer can mirror that instead of
+    always inserting its own separator). Returns (message, None, True) if no
+    valid segment was found.
     """
     match = _DATA_SEGMENT_PATTERN.search(message)
     if not match:
-        return message, None
+        return message, None, True
 
     tokens = match.group(1).split()
-    if len(tokens) <= 1:
+    spaced = len(tokens) > 1
+    if not spaced:
         # No whitespace between bytes: split the run of hex digits into pairs.
         compact = tokens[0] if tokens else ""
         if re.fullmatch(r'[0-9a-fA-F]+', compact):
@@ -240,22 +271,23 @@ def _extract_data_segment(message: str) -> Tuple[str, Optional[List[str]]]:
         try:
             data_bytes.append(f"{int(token, 16):02x}")
         except ValueError:
-            return message, None
+            return message, None, True
 
     if not data_bytes:
-        return message, None
+        return message, None, True
 
     cleaned_message = (message[:match.start()] + message[match.end():]).strip()
-    return cleaned_message, data_bytes
+    return cleaned_message, data_bytes, spaced
 
 
 def parse_line(line: str) -> LogEntry:
     """Parse a single line of log, extracting severity level and any DATA[..] byte dump."""
     entry = _parse_line_impl(line)
-    message, data_bytes = _extract_data_segment(entry.message)
+    message, data_bytes, spaced = _extract_data_segment(entry.message)
     if data_bytes is not None:
         entry.message = message
         entry.data_bytes = data_bytes
+        entry.data_bytes_spaced = spaced
     return entry
 
 

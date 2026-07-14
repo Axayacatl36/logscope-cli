@@ -62,6 +62,22 @@ def test_format_log_renders_data_bytes_below_message():
     assert lines[2].strip() == "ab ab"
 
 
+def test_format_log_renders_data_bytes_without_separator_when_source_had_none():
+    """If the DATA[..] segment had no spaces between bytes, the rendered dump
+    shouldn't insert any either."""
+    entry = LogEntry(
+        level="INFO",
+        message="msg",
+        raw="[00:00:06.900,573] <inf> Less4_Exer2: msg DATA[..]",
+        data_bytes=["12", "34", "56", "78"],
+        data_bytes_spaced=False,
+    )
+    text = manager.format_log(entry, line_number=None)
+    lines = text.plain.split("\n")
+    assert "12345678" in lines[1]
+    assert "12 34 56 78" not in lines[1]
+
+
 def test_format_log_without_data_bytes_has_no_extra_lines():
     entry = LogEntry(level="INFO", message="no payload here", raw="[INFO] no payload here")
     text = manager.format_log(entry, line_number=None)

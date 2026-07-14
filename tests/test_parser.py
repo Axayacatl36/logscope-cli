@@ -94,6 +94,34 @@ def test_parse_zephyr_missing_level_opening_bracket():
     assert entry.message == "The factorial of  4 = 24"
 
 
+def test_parse_zephyr_level_missing_one_letter():
+    """A level tag missing one of its own letters (e.g. "<in>" instead of
+    "<inf>") should still resolve to the right level, as long as a bracket
+    still anchors it."""
+    cases = [
+        ("[00:00:06.900,512] <in> mod: msg", "INFO"),
+        ("[00:00:06.900,512] <if> mod: msg", "INFO"),
+        ("[00:00:06.900,512] <nf> mod: msg", "INFO"),
+        ("[00:00:06.900,512] nf> mod: msg", "INFO"),
+        ("[00:00:06.900,512] <er> mod: msg", "ERROR"),
+        ("[00:00:06.900,512] <rr> mod: msg", "ERROR"),
+        ("[00:00:06.900,512] <wn> mod: msg", "WARN"),
+        ("[00:00:06.900,512] <db> mod: msg", "DEBUG"),
+    ]
+    for line, expected_level in cases:
+        entry = parse_line(line)
+        assert entry.level == expected_level, line
+        assert entry.service == "mod"
+        assert entry.message == "msg"
+
+
+def test_parse_bracketless_fuzzy_level_not_hijacked_by_ordinary_words():
+    """A bare two-letter word without a bracket must not be mistaken for a
+    corrupted level tag."""
+    entry = parse_line("logged in to the system")
+    assert entry.level == "UNKNOWN"
+
+
 def test_parse_zephyr_generic_bracket_timestamp_without_microseconds():
     """A timestamp that doesn't match the strict digit layout is still accepted
     as long as a level tag follows, using the bracket content verbatim."""
@@ -158,6 +186,14 @@ def test_parse_data_segment_without_separators_odd_length():
     entry = parse_line("[INFO] payload DATA[abc]")
     assert entry.message == "payload"
     assert entry.data_bytes == ["ab", "0c"]
+
+
+def test_parse_data_segment_records_whether_bytes_were_spaced():
+    spaced_entry = parse_line("[INFO] payload DATA[12 34 56]")
+    assert spaced_entry.data_bytes_spaced is True
+
+    compact_entry = parse_line("[INFO] payload DATA[123456]")
+    assert compact_entry.data_bytes_spaced is False
 
 
 def test_parse_no_data_segment_leaves_entry_unchanged():
