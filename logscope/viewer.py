@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.highlighter import RegexHighlighter
+from rich.markup import escape as rich_escape
 from rich.theme import Theme
 
 from .parser import parse_line, LogEntry, _normalize_level
@@ -51,10 +52,10 @@ MAX_LIVE_BUFFER = 2000
 MAX_LIVE_VISIBLE_LOGS = 25
 
 # Number keys used to toggle each level's visibility on/off, shown in the help bar.
-LIVE_TOGGLE_LEVELS = [
-    "TRACE", "DEBUG", "INFO", "NOTICE", "WARN", "ERROR", "CRITICAL", "ALERT", "FATAL", "UNKNOWN",
-]
-LIVE_LEVEL_KEYS = "1234567890"
+# Only the four everyday levels are toggleable in --live; TRACE/NOTICE/CRITICAL/
+# ALERT/FATAL/UNKNOWN entries are always shown and can't be hidden this way.
+LIVE_TOGGLE_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
+LIVE_LEVEL_KEYS = "1234"
 LEVEL_KEY_BY_LEVEL = dict(zip(LIVE_TOGGLE_LEVELS, LIVE_LEVEL_KEYS))
 LEVEL_BY_KEY = dict(zip(LIVE_LEVEL_KEYS, LIVE_TOGGLE_LEVELS))
 
@@ -670,11 +671,22 @@ def run_dashboard(
         pass
 
 
-_LIVE_HELP_TEXT = (
-    "[dim]/[/dim] search  [dim]r[/dim] toggle regex  [dim]m[/dim] module filter  "
+_LIVE_HELP_PREFIX = (
+    "[dim]/[/dim] search  [dim]r[/dim] regex search  [dim]m[/dim] module filter  "
     "[dim]c[/dim] clear filters  [dim]q[/dim] quit\n"
-    "[dim]toggle level:[/dim] " + "  ".join(f"{key}:{level}" for key, level in LEVEL_BY_KEY.items())
 )
+
+
+def _format_live_help_text(state: LiveFilterState) -> str:
+    """Build the level-toggle line, graying out levels the user has hidden so
+    it's visible at a glance which ones are currently disabled."""
+    labels = []
+    for key, level in LEVEL_BY_KEY.items():
+        label = f"{key}:{level}"
+        if level in state.hidden_levels:
+            label = f"[dim]{label}[/dim]"
+        labels.append(label)
+    return f"{_LIVE_HELP_PREFIX}toggle level: " + "  ".join(labels)
 
 
 def _read_key(timeout: float) -> Optional[str]:
@@ -692,7 +704,7 @@ def _prompt_line(live: Live, generate_layout, status_prefix: str) -> Optional[st
     user sees what they're typing. stdin must already be in cbreak mode."""
     buf: List[str] = []
     while True:
-        live.update(generate_layout(f"{status_prefix}{''.join(buf)}[blink]_[/blink]"))
+        live.update(generate_layout(f"{status_prefix}{rich_escape(''.join(buf))}[blink]_[/blink]"))
         ch = sys.stdin.read(1)
         if ch in ("\r", "\n"):
             return "".join(buf)
@@ -739,14 +751,17 @@ def run_live_filter(
 
     def generate_layout(status: Optional[str] = None) -> Layout:
         layout = Layout()
+        # header holds: title (1) + key-binding line (1) + level-toggle line (1)
+        # + optional status/prompt line (1) + panel border (2) = 6. Fixed so a
+        # search/regex/module prompt is never clipped off-screen while typing.
         layout.split_column(
-            Layout(name="header", size=5),
+            Layout(name="header", size=6),
             Layout(name="body"),
         )
 
         header_lines = [
-            f"[bold]🔎 LogScope Live Filter[/bold] — buffer: {len(buffer)}/{MAX_LIVE_BUFFER} — {state.describe()}",
-            _LIVE_HELP_TEXT,
+            f"[bold]🔎 LogScope Live Filter[/bold] — buffer: {len(buffer)}/{MAX_LIVE_BUFFER} — {rich_escape(state.describe())}",
+            _format_live_help_text(state),
         ]
         if status is not None:
             header_lines.append(status)
@@ -805,12 +820,16 @@ def run_live_filter(
                         state.hidden_levels = set()
                         dirty = True
                     elif key == "r":
-                        state.use_regex = not state.use_regex
+                        typed = _prompt_line(live, generate_layout, "Regex: ")
+                        if typed is not None:
+                            state.search = typed or None
+                            state.use_regex = True
                         dirty = True
                     elif key == "/":
                         typed = _prompt_line(live, generate_layout, "Search: ")
                         if typed is not None:
                             state.search = typed or None
+                            state.use_regex = False
                         dirty = True
                     elif key == "m":
                         typed = _prompt_line(live, generate_layout, "Module: ")

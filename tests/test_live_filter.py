@@ -6,6 +6,7 @@ from logscope.parser import LogEntry
 from logscope.viewer import (
     MAX_LIVE_BUFFER,
     LiveFilterState,
+    _format_live_help_text,
     entry_passes_live_filters,
     filter_live_buffer,
 )
@@ -109,8 +110,32 @@ def test_describe_reports_active_filters():
     state = LiveFilterState()
     assert state.describe() == "no filters active"
 
-    state = LiveFilterState(search="boot", use_regex=True, module="net", hidden_levels={"DEBUG", "TRACE"})
+    state = LiveFilterState(search="boot", use_regex=True, module="net", hidden_levels={"DEBUG", "INFO"})
     description = state.describe()
     assert "search[regex]='boot'" in description
     assert "module='net'" in description
-    assert "hidden=TRACE,DEBUG" in description
+    assert "hidden=DEBUG,INFO" in description
+
+
+def test_help_text_grays_out_disabled_levels():
+    """A hidden level's toggle label should be wrapped in dim markup so it
+    visibly stands out as disabled; enabled ones stay plain."""
+    state = LiveFilterState(hidden_levels={"DEBUG", "INFO"})
+    text = _format_live_help_text(state)
+    assert "[dim]1:DEBUG[/dim]" in text
+    assert "[dim]2:INFO[/dim]" in text
+    assert "3:WARN" in text and "[dim]3:WARN[/dim]" not in text
+
+
+def test_help_text_has_no_dimmed_levels_when_nothing_hidden():
+    state = LiveFilterState()
+    text = _format_live_help_text(state)
+    assert "[dim]1:DEBUG[/dim]" not in text
+    assert "1:DEBUG" in text
+
+
+def test_only_four_common_levels_are_toggleable():
+    """TRACE/NOTICE/CRITICAL/ALERT/FATAL/UNKNOWN aren't offered for toggling
+    in --live; only the everyday DEBUG/INFO/WARN/ERROR set is."""
+    from logscope.viewer import LIVE_TOGGLE_LEVELS
+    assert LIVE_TOGGLE_LEVELS == ["DEBUG", "INFO", "WARN", "ERROR"]
