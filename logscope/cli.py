@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 from typing_extensions import Annotated
-from .viewer import stream_logs, run_dashboard, manager
+from .viewer import stream_logs, run_dashboard, run_live_filter, manager
 
 app = typer.Typer(
     help="LogScope — Beautiful log viewer for the terminal",
@@ -91,6 +91,8 @@ def main(
     min_level: Annotated[Optional[str], typer.Option("--min-level", "-m", help="Show logs at or above this level threshold (e.g. WARN shows WARN, ERROR, CRITICAL, ALERT, FATAL)")] = None,
     search: Annotated[Optional[str], typer.Option("--search", "-s", help="Search string to filter logs (substring unless --regex)")] = None,
     dashboard: Annotated[bool, typer.Option("--dashboard", "-d", help="Open visual dashboard showing log statistics")] = False,
+    live: Annotated[bool, typer.Option("--live", help="Interactive mode: adjust search/regex/module/level filters live with the keyboard, applied retroactively over the last 2000 buffered lines")] = False,
+    module: Annotated[Optional[str], typer.Option("--module", "-M", help="Initial module filter for --live mode (substring match, adjustable live with 'm')")] = None,
     export_html: Annotated[Optional[Path], typer.Option("--export-html", help="Export the beautiful log output to an HTML file")] = None,
     line_numbers: Annotated[bool, typer.Option("--line-numbers", "-n", help="Show line numbers for each log message")] = False,
     since: Annotated[Optional[str], typer.Option("--since", help="Show logs since a point in time (e.g. '1h', '30m', '2026-01-01T00:00:00')")] = None,
@@ -125,6 +127,30 @@ def main(
     if dashboard and (effective_before_context or effective_after_context):
         typer.echo("❌ Error: --context is only supported in stream mode.", err=True)
         raise typer.Exit(1)
+    if live and dashboard:
+        typer.echo("❌ Error: --live cannot be combined with --dashboard.", err=True)
+        raise typer.Exit(1)
+    if live and (effective_before_context or effective_after_context):
+        typer.echo("❌ Error: --context is only supported in stream mode.", err=True)
+        raise typer.Exit(1)
+    if live and log_file is None:
+        typer.echo(
+            "❌ Error: --live needs a file or device path (it reads keyboard commands from "
+            "stdin, so log data can't be piped in). Point it at a file/capture path instead "
+            "of `... | logscope --live`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    if live and not sys.stdin.isatty():
+        typer.echo(
+            "❌ Error: --live requires stdin to be a real terminal (for keyboard commands). "
+            "Run it directly in a terminal, not via a script or redirect.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    if module and not live:
+        typer.echo("❌ Error: --module requires --live.", err=True)
+        raise typer.Exit(1)
 
     search_pattern = None
     if search and use_regex:
@@ -158,7 +184,17 @@ def main(
         manager.console.print("[dim]💡 Tip: Use '--theme' or create a '.logscoperc' file to change colors. Themes: neon, ocean, forest, minimal, spectra, simple[/dim]\n")
 
     try:
-        if dashboard:
+        if live:
+            run_live_filter(
+                file_obj,
+                follow=follow,
+                show_line_numbers=line_numbers,
+                level_filter=level,
+                module_filter=module,
+                search_filter=search,
+                use_regex=use_regex,
+            )
+        elif dashboard:
             run_dashboard(
                 file_obj,
                 follow=follow,

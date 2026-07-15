@@ -1,8 +1,10 @@
 import re
+import select
 import sys
 import textwrap
 import time
 from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime
 from typing import Deque, Iterable, Iterator, List, Optional, Pattern, Set, TextIO, Tuple
@@ -19,6 +21,13 @@ from rich.theme import Theme
 from .parser import parse_line, LogEntry, _normalize_level
 from .themes import DEFAULT_THEMES
 
+try:
+    import termios
+    import tty
+    _RAW_TERMINAL_SUPPORTED = True
+except ImportError:  # pragma: no cover - Windows has no termios/tty
+    _RAW_TERMINAL_SUPPORTED = False
+
 # Level severity order (lowest to highest)
 # Used for --min-level threshold filtering
 LEVEL_ORDER = {
@@ -33,6 +42,74 @@ LEVEL_ORDER = {
     "FATAL": 8,
     "UNKNOWN": 0,  # Treat as lowest
 }
+
+# --- Live filtering (--live) -------------------------------------------------
+# Bounded so a long-running --follow session can't grow memory without limit;
+# filters are re-applied over this whole buffer whenever they change, which at
+# this size is effectively instant (no need for anything fancier/incremental).
+MAX_LIVE_BUFFER = 2000
+MAX_LIVE_VISIBLE_LOGS = 25
+
+# Number keys used to toggle each level's visibility on/off, shown in the help bar.
+LIVE_TOGGLE_LEVELS = [
+    "TRACE", "DEBUG", "INFO", "NOTICE", "WARN", "ERROR", "CRITICAL", "ALERT", "FATAL", "UNKNOWN",
+]
+LIVE_LEVEL_KEYS = "1234567890"
+LEVEL_KEY_BY_LEVEL = dict(zip(LIVE_TOGGLE_LEVELS, LIVE_LEVEL_KEYS))
+LEVEL_BY_KEY = dict(zip(LIVE_LEVEL_KEYS, LIVE_TOGGLE_LEVELS))
+
+
+@dataclass
+class LiveFilterState:
+    """Adjustable filter state for --live mode. Mutated in place by keyboard
+    commands and re-applied over the whole buffer on every change."""
+    search: Optional[str] = None
+    use_regex: bool = False
+    module: Optional[str] = None
+    hidden_levels: Set[str] = field(default_factory=set)
+
+    def describe(self) -> str:
+        parts = []
+        if self.search:
+            kind = "regex" if self.use_regex else "text"
+            parts.append(f"search[{kind}]='{self.search}'")
+        if self.module:
+            parts.append(f"module='{self.module}'")
+        if self.hidden_levels:
+            ordered = sorted(self.hidden_levels, key=LIVE_TOGGLE_LEVELS.index)
+            parts.append("hidden=" + ",".join(ordered))
+        return " | ".join(parts) if parts else "no filters active"
+
+
+def entry_passes_live_filters(entry: LogEntry, state: LiveFilterState) -> bool:
+    """Pure predicate: does this entry pass the current live filter state?"""
+    if entry.level in state.hidden_levels:
+        return False
+
+    if state.module:
+        if not entry.service or state.module.lower() not in entry.service.lower():
+            return False
+
+    if state.search:
+        if state.use_regex:
+            try:
+                pattern = re.compile(state.search, re.IGNORECASE)
+            except re.error:
+                # Invalid/incomplete regex (likely still being typed) - don't hide everything.
+                return True
+            if not pattern.search(entry.raw):
+                return False
+        elif state.search.lower() not in entry.raw.lower():
+            return False
+
+    return True
+
+
+def filter_live_buffer(
+    buffer: Iterable[Tuple[int, LogEntry]], state: LiveFilterState
+) -> List[Tuple[int, LogEntry]]:
+    """Apply the live filter state to every entry currently in the buffer."""
+    return [(line_number, entry) for line_number, entry in buffer if entry_passes_live_filters(entry, state)]
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -587,7 +664,170 @@ def run_dashboard(
                 recent_logs.append(formatted)
                 if len(recent_logs) > MAX_LOGS:
                     recent_logs.pop(0)
-                    
+
                 live.update(generate_layout())
     except KeyboardInterrupt:
         pass
+
+
+_LIVE_HELP_TEXT = (
+    "[dim]/[/dim] search  [dim]r[/dim] toggle regex  [dim]m[/dim] module filter  "
+    "[dim]c[/dim] clear filters  [dim]q[/dim] quit\n"
+    "[dim]toggle level:[/dim] " + "  ".join(f"{key}:{level}" for key, level in LEVEL_BY_KEY.items())
+)
+
+
+def _read_key(timeout: float) -> Optional[str]:
+    """Read a single keypress from stdin if one arrives within `timeout` seconds,
+    without blocking otherwise. Requires stdin already be in cbreak mode."""
+    ready, _, _ = select.select([sys.stdin], [], [], timeout)
+    if not ready:
+        return None
+    return sys.stdin.read(1)
+
+
+def _prompt_line(live: Live, generate_layout, status_prefix: str) -> Optional[str]:
+    """Blocking single-line text entry (Enter submits, Esc/Ctrl-C cancels,
+    Backspace edits), re-rendering the live layout after every keystroke so the
+    user sees what they're typing. stdin must already be in cbreak mode."""
+    buf: List[str] = []
+    while True:
+        live.update(generate_layout(f"{status_prefix}{''.join(buf)}[blink]_[/blink]"))
+        ch = sys.stdin.read(1)
+        if ch in ("\r", "\n"):
+            return "".join(buf)
+        if ch in ("\x1b", "\x03"):  # Esc or Ctrl-C
+            return None
+        if ch in ("\x7f", "\x08"):  # Backspace
+            if buf:
+                buf.pop()
+            continue
+        if ch.isprintable():
+            buf.append(ch)
+
+
+def run_live_filter(
+    file: TextIO,
+    follow: bool,
+    show_line_numbers: bool = False,
+    level_filter: Optional[str] = None,
+    module_filter: Optional[str] = None,
+    search_filter: Optional[str] = None,
+    use_regex: bool = False,
+):
+    """Interactive terminal mode: buffers up to MAX_LIVE_BUFFER entries and lets
+    the user adjust search/regex/module/level filters live with the keyboard,
+    re-applying them retroactively over the whole buffer on every change."""
+    if not _RAW_TERMINAL_SUPPORTED:
+        manager.console.print(
+            "[bold red]❌ Error: --live requires a POSIX terminal (termios/tty unavailable here).[/bold red]"
+        )
+        return
+
+    state = LiveFilterState(
+        search=search_filter,
+        use_regex=use_regex,
+        module=module_filter,
+    )
+    initial_allowed = parse_level_filter(level_filter)
+    if initial_allowed:
+        state.hidden_levels = {lvl for lvl in LIVE_TOGGLE_LEVELS if lvl not in initial_allowed}
+
+    buffer: Deque[Tuple[int, LogEntry]] = deque(maxlen=MAX_LIVE_BUFFER)
+    total_processed = 0
+    reading_done = False
+
+    def generate_layout(status: Optional[str] = None) -> Layout:
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=5),
+            Layout(name="body"),
+        )
+
+        header_lines = [
+            f"[bold]🔎 LogScope Live Filter[/bold] — buffer: {len(buffer)}/{MAX_LIVE_BUFFER} — {state.describe()}",
+            _LIVE_HELP_TEXT,
+        ]
+        if status is not None:
+            header_lines.append(status)
+        layout["header"].update(Panel("\n".join(header_lines), border_style="cyan"))
+
+        visible = filter_live_buffer(buffer, state)
+        tail = visible[-MAX_LIVE_VISIBLE_LOGS:]
+        log_group = Group(*(
+            manager.format_log(entry, line_number=line_number if show_line_numbers else None)
+            for line_number, entry in tail
+        ))
+        title = f"Logs ({len(visible)}/{len(buffer)} shown)"
+        if follow and not reading_done:
+            title += " - [blink green]● LIVE[/blink green]"
+        layout["body"].update(Panel(log_group, title=title))
+        return layout
+
+    manager.console.clear()
+    stdin_fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(stdin_fd)
+    try:
+        file_fd = file.fileno()
+    except (AttributeError, OSError, ValueError):
+        file_fd = None
+
+    try:
+        tty.setcbreak(stdin_fd)
+        with Live(generate_layout(), console=manager.console, refresh_per_second=10) as live:
+            while True:
+                watch = [stdin_fd]
+                if file_fd is not None and not reading_done:
+                    watch.append(file_fd)
+                ready, _, _ = select.select(watch, [], [], 0.1)
+
+                dirty = False
+
+                if file_fd is not None and file_fd in ready:
+                    line = file.readline()
+                    if line:
+                        total_processed += 1
+                        line = _strip_nul_bytes(line)
+                        if line.strip():
+                            buffer.append((total_processed, parse_line(line)))
+                            dirty = True
+                    elif not follow:
+                        reading_done = True
+                        dirty = True
+
+                if stdin_fd in ready:
+                    key = sys.stdin.read(1)
+                    if key == "q":
+                        break
+                    elif key == "c":
+                        state.search = None
+                        state.module = None
+                        state.hidden_levels = set()
+                        dirty = True
+                    elif key == "r":
+                        state.use_regex = not state.use_regex
+                        dirty = True
+                    elif key == "/":
+                        typed = _prompt_line(live, generate_layout, "Search: ")
+                        if typed is not None:
+                            state.search = typed or None
+                        dirty = True
+                    elif key == "m":
+                        typed = _prompt_line(live, generate_layout, "Module: ")
+                        if typed is not None:
+                            state.module = typed or None
+                        dirty = True
+                    elif key in LEVEL_BY_KEY:
+                        level = LEVEL_BY_KEY[key]
+                        if level in state.hidden_levels:
+                            state.hidden_levels.discard(level)
+                        else:
+                            state.hidden_levels.add(level)
+                        dirty = True
+
+                if dirty:
+                    live.update(generate_layout())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
