@@ -1,3 +1,4 @@
+import os
 import re
 import select
 import sys
@@ -66,7 +67,7 @@ class LiveFilterState:
     commands and re-applied over the whole buffer on every change."""
     search: Optional[str] = None
     use_regex: bool = False
-    module: Optional[str] = None
+    hidden_modules: Set[str] = field(default_factory=set)
     hidden_levels: Set[str] = field(default_factory=set)
 
     def describe(self) -> str:
@@ -74,8 +75,8 @@ class LiveFilterState:
         if self.search:
             kind = "regex" if self.use_regex else "text"
             parts.append(f"search[{kind}]='{self.search}'")
-        if self.module:
-            parts.append(f"module='{self.module}'")
+        if self.hidden_modules:
+            parts.append("hidden modules=" + ",".join(sorted(self.hidden_modules)))
         if self.hidden_levels:
             ordered = sorted(self.hidden_levels, key=LIVE_TOGGLE_LEVELS.index)
             parts.append("hidden=" + ",".join(ordered))
@@ -87,9 +88,8 @@ def entry_passes_live_filters(entry: LogEntry, state: LiveFilterState) -> bool:
     if entry.level in state.hidden_levels:
         return False
 
-    if state.module:
-        if not entry.service or state.module.lower() not in entry.service.lower():
-            return False
+    if entry.service and entry.service in state.hidden_modules:
+        return False
 
     if state.search:
         if state.use_regex:
@@ -111,6 +111,67 @@ def filter_live_buffer(
 ) -> List[Tuple[int, LogEntry]]:
     """Apply the live filter state to every entry currently in the buffer."""
     return [(line_number, entry) for line_number, entry in buffer if entry_passes_live_filters(entry, state)]
+
+
+@dataclass
+class ModulePickerState:
+    """State for the interactive multi-select module list (opened with 'm' in
+    --live). `modules` is a snapshot taken when the picker opens; `hidden` is
+    mutated as the user toggles rows."""
+    modules: List[str]
+    hidden: Set[str] = field(default_factory=set)
+    cursor: int = 0
+
+    def move(self, delta: int) -> None:
+        if self.modules:
+            self.cursor = (self.cursor + delta) % len(self.modules)
+
+    def toggle_current(self) -> None:
+        if not self.modules:
+            return
+        name = self.modules[self.cursor]
+        if name in self.hidden:
+            self.hidden.discard(name)
+        else:
+            self.hidden.add(name)
+
+    def toggle_all(self) -> None:
+        """Hide everything if anything is currently shown; otherwise show everything."""
+        if len(self.hidden) < len(self.modules):
+            self.hidden = set(self.modules)
+        else:
+            self.hidden = set()
+
+
+def _format_module_picker(picker: ModulePickerState, wrap_width: Optional[int] = None) -> str:
+    """Render the module picker as a list, marking the cursor row and graying
+    out deselected (hidden) modules. Long module names wrap to an indented
+    continuation line once `wrap_width` is set, same as messages/DATA dumps."""
+    if not picker.modules:
+        return "[dim](no modules seen yet)[/dim]"
+    lines = []
+    for i, name in enumerate(picker.modules):
+        marker = "[ ]" if name in picker.hidden else "[x]"
+        cursor = "→ " if i == picker.cursor else "  "
+        prefix = f"{cursor}{marker} "
+
+        if wrap_width and wrap_width > 0:
+            available = max(wrap_width - len(prefix), 10)
+            chunks = textwrap.wrap(name, width=available) or [""]
+        else:
+            chunks = [name]
+
+        indent = " " * len(prefix)
+        for j, chunk in enumerate(chunks):
+            row_prefix = prefix if j == 0 else indent
+            # Escape the whole line (marker brackets included) since Rich would
+            # otherwise try to parse "[x]"/"[ ]" as markup tags and swallow them.
+            label = rich_escape(f"{row_prefix}{chunk}")
+            if name in picker.hidden:
+                label = f"[dim]{label}[/dim]"
+            lines.append(label)
+    return "\n".join(lines)
+
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -672,9 +733,45 @@ def run_dashboard(
 
 
 _LIVE_HELP_PREFIX = (
-    "[dim]/[/dim] search  [dim]r[/dim] regex search  [dim]m[/dim] module filter  "
-    "[dim]c[/dim] clear filters  [dim]q[/dim] quit\n"
+    "[dim]/[/dim] search  [dim]r[/dim] regex  [dim]m[/dim] modules  "
+    "[dim]c[/dim] clear filters  [dim]p[/dim] clear buffer  [dim]q[/dim] quit\n"
 )
+
+_MODULE_PICKER_HELP = (
+    "Modules: [dim]↑/↓[/dim] move  [dim]enter[/dim] toggle  "
+    "[dim]a[/dim] all/none  [dim]m[/dim] confirm  [dim]esc[/dim] cancel"
+)
+
+
+def _read_char(fd: int) -> str:
+    """Read exactly one character straight from the raw file descriptor (not
+    through sys.stdin's buffered TextIOWrapper). Keeping every keyboard read in
+    this module at the raw-fd level is what lets select() reliably tell whether
+    more bytes are already waiting (e.g. to detect arrow-key escape sequences) -
+    select() only sees the kernel-level buffer, so mixing it with buffered
+    sys.stdin.read() calls causes it to miss bytes Python already siphoned into
+    its own userspace buffer."""
+    return os.read(fd, 1).decode(errors="replace")
+
+
+def _resolve_arrow_key(fd: int, first_char: str) -> str:
+    """If `first_char` is the start of an arrow-key escape sequence (ESC [ A/B),
+    consume and resolve it to 'UP'/'DOWN'; otherwise return it unchanged. A lone
+    Escape press (nothing follows within the lookahead window) stays "\\x1b"."""
+    if first_char != "\x1b":
+        return first_char
+    ready, _, _ = select.select([fd], [], [], 0.05)
+    if not ready:
+        return first_char
+    second = _read_char(fd)
+    if second != "[":
+        return second
+    third = _read_char(fd)
+    if third == "A":
+        return "UP"
+    if third == "B":
+        return "DOWN"
+    return first_char
 
 
 def _format_live_help_text(state: LiveFilterState) -> str:
@@ -689,23 +786,14 @@ def _format_live_help_text(state: LiveFilterState) -> str:
     return f"{_LIVE_HELP_PREFIX}toggle level: " + "  ".join(labels)
 
 
-def _read_key(timeout: float) -> Optional[str]:
-    """Read a single keypress from stdin if one arrives within `timeout` seconds,
-    without blocking otherwise. Requires stdin already be in cbreak mode."""
-    ready, _, _ = select.select([sys.stdin], [], [], timeout)
-    if not ready:
-        return None
-    return sys.stdin.read(1)
-
-
-def _prompt_line(live: Live, generate_layout, status_prefix: str) -> Optional[str]:
+def _prompt_line(fd: int, live: Live, generate_layout, status_prefix: str) -> Optional[str]:
     """Blocking single-line text entry (Enter submits, Esc/Ctrl-C cancels,
     Backspace edits), re-rendering the live layout after every keystroke so the
     user sees what they're typing. stdin must already be in cbreak mode."""
     buf: List[str] = []
     while True:
         live.update(generate_layout(f"{status_prefix}{rich_escape(''.join(buf))}[blink]_[/blink]"))
-        ch = sys.stdin.read(1)
+        ch = _read_char(fd)
         if ch in ("\r", "\n"):
             return "".join(buf)
         if ch in ("\x1b", "\x03"):  # Esc or Ctrl-C
@@ -716,6 +804,32 @@ def _prompt_line(live: Live, generate_layout, status_prefix: str) -> Optional[st
             continue
         if ch.isprintable():
             buf.append(ch)
+
+
+def _prompt_module_picker(
+    fd: int, live: Live, generate_layout, modules: List[str], hidden: Set[str]
+) -> Optional[Set[str]]:
+    """Interactive multi-select list for toggling module visibility. Up/Down
+    move, Enter (or space) toggles the highlighted module, 'a' toggles
+    all/none, 'm' confirms (returns the new hidden set), Esc/Ctrl-C cancels
+    (returns None, discarding changes made in this session). stdin must
+    already be in cbreak mode."""
+    picker = ModulePickerState(modules=list(modules), hidden=set(hidden))
+    while True:
+        live.update(generate_layout(_MODULE_PICKER_HELP, module_picker=picker))
+        ch = _resolve_arrow_key(fd, _read_char(fd))
+        if ch == "m":
+            return picker.hidden
+        if ch in ("\x1b", "\x03"):  # Esc or Ctrl-C
+            return None
+        if ch == "DOWN":
+            picker.move(1)
+        elif ch == "UP":
+            picker.move(-1)
+        elif ch in (" ", "\r", "\n"):
+            picker.toggle_current()
+        elif ch == "a":
+            picker.toggle_all()
 
 
 def run_live_filter(
@@ -739,8 +853,9 @@ def run_live_filter(
     state = LiveFilterState(
         search=search_filter,
         use_regex=use_regex,
-        module=module_filter,
     )
+    if module_filter:
+        state.hidden_modules = {m.strip() for m in module_filter.split(",") if m.strip()}
     initial_allowed = parse_level_filter(level_filter)
     if initial_allowed:
         state.hidden_levels = {lvl for lvl in LIVE_TOGGLE_LEVELS if lvl not in initial_allowed}
@@ -749,7 +864,9 @@ def run_live_filter(
     total_processed = 0
     reading_done = False
 
-    def generate_layout(status: Optional[str] = None) -> Layout:
+    def generate_layout(
+        status: Optional[str] = None, module_picker: Optional[ModulePickerState] = None
+    ) -> Layout:
         layout = Layout()
         # header holds: title (1) + key-binding line (1) + level-toggle line (1)
         # + optional status/prompt line (1) + panel border (2) = 6. Fixed so a
@@ -766,6 +883,11 @@ def run_live_filter(
         if status is not None:
             header_lines.append(status)
         layout["header"].update(Panel("\n".join(header_lines), border_style="cyan"))
+
+        if module_picker is not None:
+            picker_text = _format_module_picker(module_picker, wrap_width=manager._wrap_width)
+            layout["body"].update(Panel(picker_text, title="Select modules to show"))
+            return layout
 
         visible = filter_live_buffer(buffer, state)
         tail = visible[-MAX_LIVE_VISIBLE_LOGS:]
@@ -811,30 +933,34 @@ def run_live_filter(
                         dirty = True
 
                 if stdin_fd in ready:
-                    key = sys.stdin.read(1)
+                    key = _read_char(stdin_fd)
                     if key == "q":
                         break
                     elif key == "c":
                         state.search = None
-                        state.module = None
+                        state.hidden_modules = set()
                         state.hidden_levels = set()
                         dirty = True
+                    elif key == "p":
+                        buffer.clear()
+                        dirty = True
                     elif key == "r":
-                        typed = _prompt_line(live, generate_layout, "Regex: ")
+                        typed = _prompt_line(stdin_fd, live, generate_layout, "Regex: ")
                         if typed is not None:
                             state.search = typed or None
                             state.use_regex = True
                         dirty = True
                     elif key == "/":
-                        typed = _prompt_line(live, generate_layout, "Search: ")
+                        typed = _prompt_line(stdin_fd, live, generate_layout, "Search: ")
                         if typed is not None:
                             state.search = typed or None
                             state.use_regex = False
                         dirty = True
                     elif key == "m":
-                        typed = _prompt_line(live, generate_layout, "Module: ")
-                        if typed is not None:
-                            state.module = typed or None
+                        known_modules = sorted({entry.service for _, entry in buffer if entry.service})
+                        result = _prompt_module_picker(stdin_fd, live, generate_layout, known_modules, state.hidden_modules)
+                        if result is not None:
+                            state.hidden_modules = result
                         dirty = True
                     elif key in LEVEL_BY_KEY:
                         level = LEVEL_BY_KEY[key]

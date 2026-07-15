@@ -6,7 +6,9 @@ from logscope.parser import LogEntry
 from logscope.viewer import (
     MAX_LIVE_BUFFER,
     LiveFilterState,
+    ModulePickerState,
     _format_live_help_text,
+    _format_module_picker,
     entry_passes_live_filters,
     filter_live_buffer,
 )
@@ -29,11 +31,12 @@ def test_hidden_level_is_excluded():
     assert entry_passes_live_filters(make_entry(level="INFO"), state) is True
 
 
-def test_module_filter_matches_substring_case_insensitively():
-    state = LiveFilterState(module="NET")
+def test_hidden_module_is_excluded():
+    state = LiveFilterState(hidden_modules={"diskmod"})
     assert entry_passes_live_filters(make_entry(service="netmod"), state) is True
     assert entry_passes_live_filters(make_entry(service="diskmod"), state) is False
-    assert entry_passes_live_filters(make_entry(service=None), state) is False
+    # No module tag at all - nothing to hide it by, so it's always shown.
+    assert entry_passes_live_filters(make_entry(service=None), state) is True
 
 
 def test_plain_search_matches_raw_line_case_insensitively():
@@ -57,7 +60,7 @@ def test_invalid_regex_does_not_hide_everything():
 
 
 def test_filters_combine_with_and_semantics():
-    state = LiveFilterState(module="net", search="error", hidden_levels={"DEBUG"})
+    state = LiveFilterState(hidden_modules={"diskmod"}, search="error", hidden_levels={"DEBUG"})
     matching = make_entry(level="INFO", message="error seen", service="netmod")
     wrong_module = make_entry(level="INFO", message="error seen", service="diskmod")
     wrong_search = make_entry(level="INFO", message="all fine", service="netmod")
@@ -110,10 +113,12 @@ def test_describe_reports_active_filters():
     state = LiveFilterState()
     assert state.describe() == "no filters active"
 
-    state = LiveFilterState(search="boot", use_regex=True, module="net", hidden_levels={"DEBUG", "INFO"})
+    state = LiveFilterState(
+        search="boot", use_regex=True, hidden_modules={"netmod"}, hidden_levels={"DEBUG", "INFO"}
+    )
     description = state.describe()
     assert "search[regex]='boot'" in description
-    assert "module='net'" in description
+    assert "hidden modules=netmod" in description
     assert "hidden=DEBUG,INFO" in description
 
 
@@ -139,3 +144,81 @@ def test_only_four_common_levels_are_toggleable():
     in --live; only the everyday DEBUG/INFO/WARN/ERROR set is."""
     from logscope.viewer import LIVE_TOGGLE_LEVELS
     assert LIVE_TOGGLE_LEVELS == ["DEBUG", "INFO", "WARN", "ERROR"]
+
+
+# --- Module picker (multi-select list opened with 'm') ----------------------
+
+def test_module_picker_move_wraps_around():
+    picker = ModulePickerState(modules=["alpha", "beta", "gamma"])
+    assert picker.cursor == 0
+    picker.move(-1)
+    assert picker.cursor == 2
+    picker.move(1)
+    assert picker.cursor == 0
+
+
+def test_module_picker_move_on_empty_list_does_not_crash():
+    picker = ModulePickerState(modules=[])
+    picker.move(1)
+    picker.move(-1)
+    assert picker.cursor == 0
+
+
+def test_module_picker_toggle_current_hides_and_shows():
+    picker = ModulePickerState(modules=["alpha", "beta"])
+    picker.toggle_current()
+    assert picker.hidden == {"alpha"}
+    picker.toggle_current()
+    assert picker.hidden == set()
+
+
+def test_module_picker_toggle_current_on_empty_list_does_not_crash():
+    picker = ModulePickerState(modules=[])
+    picker.toggle_current()
+    assert picker.hidden == set()
+
+
+def test_module_picker_toggle_all_hides_then_shows_everything():
+    picker = ModulePickerState(modules=["alpha", "beta", "gamma"])
+    picker.toggle_all()
+    assert picker.hidden == {"alpha", "beta", "gamma"}
+    picker.toggle_all()
+    assert picker.hidden == set()
+
+
+def test_module_picker_toggle_all_from_partial_selection_hides_all():
+    picker = ModulePickerState(modules=["alpha", "beta", "gamma"], hidden={"alpha"})
+    picker.toggle_all()
+    assert picker.hidden == {"alpha", "beta", "gamma"}
+
+
+def test_format_module_picker_marks_cursor_and_hidden_state():
+    picker = ModulePickerState(modules=["alpha", "beta"], hidden={"beta"}, cursor=0)
+    text = _format_module_picker(picker)
+    lines = text.splitlines()
+    assert lines[0].startswith("→ ")
+    assert "[x] alpha" in lines[0]
+    assert "[dim]" in lines[1] and "[ ] beta" in lines[1]
+
+
+def test_format_module_picker_wraps_long_names_when_wrap_width_set():
+    """A module name longer than the available width should wrap onto an
+    indented continuation line, same as message/DATA wrapping."""
+    picker = ModulePickerState(modules=["a_very_long_module_name_that_wont_fit"], cursor=0)
+    text = _format_module_picker(picker, wrap_width=20)
+    lines = text.splitlines()
+    assert len(lines) > 1
+    prefix_width = len("→ [x] ")
+    for continuation in lines[1:]:
+        assert continuation[:prefix_width].strip() == ""
+
+
+def test_format_module_picker_no_wrap_by_default():
+    picker = ModulePickerState(modules=["a_very_long_module_name_that_wont_fit"], cursor=0)
+    text = _format_module_picker(picker)
+    assert len(text.splitlines()) == 1
+
+
+def test_format_module_picker_empty_state():
+    picker = ModulePickerState(modules=[])
+    assert "no modules seen yet" in _format_module_picker(picker)

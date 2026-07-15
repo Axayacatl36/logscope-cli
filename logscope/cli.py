@@ -92,7 +92,7 @@ def main(
     search: Annotated[Optional[str], typer.Option("--search", "-s", help="Search string to filter logs (substring unless --regex)")] = None,
     dashboard: Annotated[bool, typer.Option("--dashboard", "-d", help="Open visual dashboard showing log statistics")] = False,
     live: Annotated[bool, typer.Option("--live", help="Interactive mode: adjust search/regex/module/level filters live with the keyboard, applied retroactively over the last 2000 buffered lines")] = False,
-    module: Annotated[Optional[str], typer.Option("--module", "-M", help="Initial module filter for --live mode (substring match, adjustable live with 'm')")] = None,
+    module: Annotated[Optional[str], typer.Option("--module", "-M", help="Comma-separated module names to initially hide in --live mode (adjustable live via the 'm' module picker)")] = None,
     export_html: Annotated[Optional[Path], typer.Option("--export-html", help="Export the beautiful log output to an HTML file")] = None,
     line_numbers: Annotated[bool, typer.Option("--line-numbers", "-n", help="Show line numbers for each log message")] = False,
     since: Annotated[Optional[str], typer.Option("--since", help="Show logs since a point in time (e.g. '1h', '30m', '2026-01-01T00:00:00')")] = None,
